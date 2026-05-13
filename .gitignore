@@ -1,0 +1,4 @@
+.reference-Clawdmeter/
+__pycache__/
+*.pyc
+.pio/
