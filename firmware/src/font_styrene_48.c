@@ -1,11 +1,22 @@
 /*******************************************************************************
  * Size: 48 px
  * Bpp: 4
- * Opts: --font /home/hermann/Documents/Code/Personal/claude-usage-monitor-sc01-plus/.claude/worktrees/waveshare-esp32-s3-touch-amoled-2.16/assets/StyreneB-Regular.otf -r 0x20-0x7E --size 48 --format lvgl --bpp 4 --no-compress -o /home/hermann/Documents/Code/Personal/claude-usage-monitor-sc01-plus/.claude/worktrees/waveshare-esp32-s3-touch-amoled-2.16/firmware/src/font_styrene_48.c --lv-include lvgl.h
+ * Opts: --font assets/StyreneB-Regular.otf -r 0x20-0x7E --size 48 --format lvgl --bpp 4 --no-compress -o firmware/src/font_styrene_48.c --lv-include lvgl.h
  ******************************************************************************/
 
+#if defined(__INTELLISENSE__)
+#define FONT_STYRENE_48_SKIP 1
+#elif defined(__has_include)
+#if __has_include("lvgl.h")
 #include "lvgl.h"
+#else
+#define FONT_STYRENE_48_SKIP 1
+#endif
+#else
+#include "lvgl.h"
+#endif
 
+#ifndef FONT_STYRENE_48_SKIP
 
 
 /*-----------------
@@ -5670,3 +5681,4 @@ const lv_font_t font_styrene_48 = {
 
 
 
+#endif /* FONT_STYRENE_48_SKIP */
