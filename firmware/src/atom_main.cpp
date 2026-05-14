@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <M5Unified.h>
+#include <pgmspace.h>
 #include "ble.h"
 #include "data.h"
+#include "sukuna_pet.h"
 
 static UsageData usage = {};
 static int screen = 0;
@@ -28,18 +30,26 @@ static constexpr uint8_t SCREEN_COUNT = 4;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
 static constexpr uint16_t PET_FRAME_MS = 240;
 static constexpr int PET_CANVAS_W = 128;
-static constexpr int PET_CANVAS_H = 72;
+static constexpr int PET_CANVAS_H = 104;
+
+enum PetKind : uint8_t {
+    PET_KIND_SUKUNA,
+    PET_KIND_SHAPE,
+};
 
 struct PetDefinition {
     const char* name;
     uint16_t accent;
+    PetKind kind;
+    uint8_t shape;
 };
 
 static const PetDefinition pets[] = {
-    {"Orb", 0xD69A},
-    {"Spark", 0xFD20},
-    {"Pixel", 0x07FF},
-    {"Bloom", 0xF81F},
+    {"Sakuna", 0xD69A, PET_KIND_SUKUNA, 0},
+    {"Orb", 0xD69A, PET_KIND_SHAPE, 0},
+    {"Spark", 0xFD20, PET_KIND_SHAPE, 1},
+    {"Pixel", 0x07FF, PET_KIND_SHAPE, 2},
+    {"Bloom", 0xF81F, PET_KIND_SHAPE, 3},
 };
 static constexpr uint8_t PET_COUNT = sizeof(pets) / sizeof(pets[0]);
 
@@ -211,6 +221,17 @@ static void reset_pet_animation() {
     last_pet_message = last_pet_frame;
 }
 
+static uint8_t current_pet_frame_count() {
+    return pets[selected_pet].kind == PET_KIND_SUKUNA ? SUKUNA_PET_FRAMES : 24;
+}
+
+static uint16_t current_pet_frame_ms() {
+    if (pets[selected_pet].kind == PET_KIND_SUKUNA) {
+        return pgm_read_word(&sukuna_pet_frame_ms[pet_frame % SUKUNA_PET_FRAMES]);
+    }
+    return PET_FRAME_MS;
+}
+
 static void draw_pet_orb(M5Canvas& canvas, int cx, int cy, int pulse, uint16_t accent) {
     canvas.drawCircle(cx, cy, 24 + pulse / 3, ATOM_DIM);
     canvas.drawCircle(cx, cy, 16 + pulse / 4, accent);
@@ -254,9 +275,26 @@ static void draw_pet_bloom(M5Canvas& canvas, int cx, int cy, int pulse, uint16_t
     canvas.fillCircle(cx, cy, 7 + pulse / 4, accent);
 }
 
+static void draw_pet_sukuna(M5Canvas& canvas, int x0, int y0, uint8_t frame) {
+    frame %= SUKUNA_PET_FRAMES;
+    for (int y = 0; y < SUKUNA_PET_H; y++) {
+        for (int x = 0; x < SUKUNA_PET_W; x++) {
+            int idx = y * SUKUNA_PET_W + x;
+            if (pgm_read_byte(&sukuna_pet_alpha[frame][idx]) < 16) continue;
+            uint16_t color = pgm_read_word(&sukuna_pet_rgb565[frame][idx]);
+            canvas.drawPixel(x0 + x, y0 + y, color);
+        }
+    }
+}
+
 static void draw_pet_preview(M5Canvas& canvas, int cx, int cy, int pulse, uint8_t pet_idx) {
     const PetDefinition& pet = pets[pet_idx % PET_COUNT];
-    switch (pet_idx % PET_COUNT) {
+    if (pet.kind == PET_KIND_SUKUNA) {
+        draw_pet_sukuna(canvas, (PET_CANVAS_W - SUKUNA_PET_W) / 2, 0, pet_frame);
+        return;
+    }
+
+    switch (pet.shape) {
         case 1: draw_pet_spark(canvas, cx, cy, pulse, pet.accent); break;
         case 2: draw_pet_pixel(canvas, cx, cy, pulse, pet.accent); break;
         case 3: draw_pet_bloom(canvas, cx, cy, pulse, pet.accent); break;
@@ -280,8 +318,8 @@ static void draw_pet(bool force = false) {
         next_frame = 0;
         last_pet_frame = now;
         last_pet_message = now;
-    } else if (now - last_pet_frame >= PET_FRAME_MS) {
-        next_frame = (pet_frame + 1) % 24;
+    } else if (now - last_pet_frame >= current_pet_frame_ms()) {
+        next_frame = (pet_frame + 1) % current_pet_frame_count();
         last_pet_frame = now;
         redraw = true;
     }
@@ -311,16 +349,16 @@ static void draw_pet(bool force = false) {
         present_canvas();
     }
 
-    int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
-    draw_pet_frame_region(24, 44, pulse);
-
     pet_frame = next_frame;
+
+    int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
+    draw_pet_frame_region(24, pets[selected_pet].kind == PET_KIND_SUKUNA ? 48 : 44, pulse);
 }
 
 static void draw_pet_select(bool force = false) {
     uint32_t now = millis();
-    if (now - last_pet_frame >= PET_FRAME_MS) {
-        pet_frame = (pet_frame + 1) % 24;
+    if (now - last_pet_frame >= current_pet_frame_ms()) {
+        pet_frame = (pet_frame + 1) % current_pet_frame_count();
         last_pet_frame = now;
     } else if (!force) {
         return;
@@ -329,23 +367,15 @@ static void draw_pet_select(bool force = false) {
     if (force) {
         screen_canvas.fillScreen(ATOM_BG);
         screen_canvas.setTextDatum(top_center);
-        screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
-        screen_canvas.setTextSize(1);
-        screen_canvas.drawString("Pet Select", 64, 6);
-        screen_canvas.drawFastHLine(22, 19, 84, ATOM_RULE);
-
-        screen_canvas.setTextDatum(top_center);
         screen_canvas.setTextColor(pets[selected_pet].accent, ATOM_BG);
-        screen_canvas.setTextSize(2);
-        screen_canvas.drawString(pets[selected_pet].name, 64, 92);
         screen_canvas.setTextSize(1);
-        screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
-        screen_canvas.drawString(String(selected_pet + 1) + "/" + String(PET_COUNT) + " hold for next", 64, 115);
+        screen_canvas.drawString(String(pets[selected_pet].name) + " " + String(selected_pet + 1) + "/" + String(PET_COUNT), 64, 6);
+        screen_canvas.drawFastHLine(22, 19, 84, ATOM_RULE);
         present_canvas();
     }
 
     int pulse = pet_frame < 12 ? pet_frame : 24 - pet_frame;
-    draw_pet_frame_region(22, 37, pulse);
+    draw_pet_frame_region(22, pets[selected_pet].kind == PET_KIND_SUKUNA ? 48 : 37, pulse);
 }
 
 static void select_next_pet() {
