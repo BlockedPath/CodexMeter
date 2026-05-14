@@ -7,6 +7,8 @@ struct UsageData {
     float weekly_pct;        // 7-day window utilization (0-100)
     int weekly_reset_mins;   // minutes until weekly resets
     char status[24];         // short status line
+    char pet_title[28];      // active Codex chat title
+    char pet_message[44];    // current Codex activity/pet overlay line
     bool ok;                 // data parse succeeded
     bool valid;              // false until first successful parse
 };

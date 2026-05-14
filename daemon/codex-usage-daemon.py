@@ -15,6 +15,7 @@ import asyncio
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -22,7 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -69,6 +70,7 @@ RX_CHAR_UUID = "434f4445-584d-4554-4552-000000000002"
 REQ_CHAR_UUID = "434f4445-584d-4554-4552-000000000004"
 
 POLL_INTERVAL = int(os.getenv("CODEXMETER_POLL_INTERVAL", "60"))
+ACTIVITY_POLL_INTERVAL = float(os.getenv("CODEXMETER_ACTIVITY_POLL_INTERVAL", "2"))
 SCAN_TIMEOUT = float(os.getenv("CODEXMETER_SCAN_TIMEOUT", "10"))
 DAILY_BUDGET_USD = float(os.getenv("CODEXMETER_DAILY_BUDGET_USD", "10"))
 WEEKLY_BUDGET_USD = float(os.getenv("CODEXMETER_WEEKLY_BUDGET_USD", "50"))
@@ -79,6 +81,9 @@ ADDRESS_FILE = CACHE_DIR / "ble-address"
 OPENAI_COSTS_URL = "https://api.openai.com/v1/organization/costs"
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 CODEX_AUTH_FILE = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex"))) / "auth.json"
+CODEX_HOME = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex")))
+CODEX_SESSIONS_DIR = CODEX_HOME / "sessions"
+CODEX_SESSION_INDEX = CODEX_HOME / "session_index.jsonl"
 SERIAL_PATTERNS = (
     "/dev/cu.usbmodemDC5475CBBC601",
     "/dev/cu.usbmodem*",
@@ -101,19 +106,23 @@ class UsageSnapshot:
     weekly_reset_mins: int
     status: str
     ok: bool
+    pet_title: str = ""
+    pet_message: str = ""
 
     def payload(self) -> str:
-        return json.dumps(
-            {
-                "s": self.session_pct,
-                "sr": self.session_reset_mins,
-                "w": self.weekly_pct,
-                "wr": self.weekly_reset_mins,
-                "st": self.status,
-                "ok": self.ok,
-            },
-            separators=(",", ":"),
-        )
+        data = {
+            "s": self.session_pct,
+            "sr": self.session_reset_mins,
+            "w": self.weekly_pct,
+            "wr": self.weekly_reset_mins,
+            "st": self.status,
+            "ok": self.ok,
+        }
+        if self.pet_title:
+            data["pt"] = compact_text(self.pet_title, 26)
+        if self.pet_message:
+            data["m"] = compact_text(self.pet_message, 42)
+        return json.dumps(data, separators=(",", ":"))
 
 
 def log(message: str) -> None:
@@ -292,6 +301,169 @@ def parse_iso(value: str) -> datetime | None:
         return None
 
 
+def latest_session_file() -> Path | None:
+    if not CODEX_SESSIONS_DIR.exists():
+        return None
+    latest: tuple[float, Path] | None = None
+    for path in CODEX_SESSIONS_DIR.rglob("*.jsonl"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if latest is None or mtime > latest[0]:
+            latest = (mtime, path)
+    return latest[1] if latest else None
+
+
+def compact_text(value: str, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3].rstrip() + "..."
+
+
+def tail_text(path: Path, limit: int = 524288) -> str:
+    with path.open("rb") as fh:
+        try:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - limit))
+        except OSError:
+            pass
+        return fh.read().decode("utf-8", errors="replace")
+
+
+def session_id_from_path(path: Path) -> str:
+    match = re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", path.stem)
+    return match.group(1) if match else ""
+
+
+def session_title(session_id: str) -> str:
+    if not session_id or not CODEX_SESSION_INDEX.exists():
+        return ""
+    try:
+        for line in CODEX_SESSION_INDEX.read_text(errors="replace").splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if str(row.get("id") or "") == session_id:
+                return compact_text(str(row.get("thread_name") or ""), 26)
+    except OSError:
+        return ""
+    return ""
+
+
+def message_text(payload: dict) -> str:
+    chunks: list[str] = []
+    content = payload.get("content")
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text") or part.get("content")
+            if text:
+                chunks.append(str(text))
+    elif isinstance(content, str):
+        chunks.append(content)
+    return compact_text(" ".join(chunks), 42)
+
+
+def task_complete_text(payload: dict) -> str:
+    return compact_text(str(payload.get("last_agent_message") or ""), 42)
+
+
+def command_activity(cmd: str) -> str:
+    lowered = cmd.strip().lower()
+    first = lowered.split(maxsplit=1)[0] if lowered else ""
+    if first in {"rg", "grep", "find", "mdfind"}:
+        return "Searching files"
+    if first in {"sed", "tail", "head", "cat", "nl", "less"}:
+        return "Reading file"
+    if first in {"ls", "tree", "pwd"}:
+        return "Listing files"
+    if "platformio" in lowered or "pio " in lowered:
+        return "Building firmware"
+    if "git " in lowered:
+        return "Checking git"
+    return "Running command"
+
+
+def function_call_activity(name: str, arguments: str) -> str:
+    try:
+        args = json.loads(arguments)
+    except json.JSONDecodeError:
+        args = {}
+    if name == "exec_command":
+        return command_activity(str(args.get("cmd") or ""))
+    if name in {"apply_patch"}:
+        return "Editing files"
+    if name in {"open", "find"}:
+        return "Reading docs"
+    if name in {"search_query", "web.run"}:
+        return "Searching web"
+    return "Using tool"
+
+
+def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> tuple[str, str]:
+    path = path or latest_session_file()
+    if path is None:
+        return "", ""
+    title = session_title(session_id_from_path(path)) or "Codex"
+    try:
+        raw_lines = tail_text(path).splitlines()
+    except OSError:
+        return title, ""
+
+    now = utc_now()
+    for line in reversed(raw_lines):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ts = parse_iso(str(row.get("timestamp", "")))
+        if ts is not None and (now - ts).total_seconds() > max_age_seconds:
+            return title, "Ready"
+
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        row_type = row.get("type")
+
+        if row_type == "response_item":
+            item_type = payload.get("type")
+            if item_type == "function_call":
+                return title, function_call_activity(str(payload.get("name") or ""), str(payload.get("arguments") or ""))
+            if item_type == "function_call_output":
+                return title, "Thinking"
+            if item_type == "message":
+                phase = str(payload.get("phase") or "")
+                if phase in {"final", "final_answer"}:
+                    return title, message_text(payload) or "Ready"
+                return title, "Thinking"
+
+        if row_type == "event_msg":
+            event_type = payload.get("type")
+            if event_type == "task_complete":
+                return title, task_complete_text(payload) or "Ready"
+            if event_type == "agent_message":
+                phase = str(payload.get("phase") or "")
+                if phase in {"final", "final_answer"}:
+                    return title, compact_text(str(payload.get("message") or ""), 42) or "Ready"
+                return title, "Thinking"
+            if event_type == "token_count":
+                return title, "Thinking"
+
+    return title, "Ready"
+
+
+def with_codex_activity(snapshot: UsageSnapshot) -> UsageSnapshot:
+    title, message = codex_activity()
+    return replace(snapshot, pet_title=title, pet_message=message)
+
+
 def local_codex_activity_snapshot() -> UsageSnapshot:
     index = Path.home() / ".codex" / "session_index.jsonl"
     now = utc_now()
@@ -370,6 +542,8 @@ async def run_once(address: str) -> None:
     async with BleakClient(address) as client:
         log("Connected")
         last_poll = 0.0
+        last_payload = ""
+        snapshot = usage_snapshot()
         refresh_requested = asyncio.Event()
 
         def on_refresh(_sender, _data):
@@ -385,15 +559,17 @@ async def run_once(address: str) -> None:
             if refresh_requested.is_set() or now - last_poll >= POLL_INTERVAL:
                 refresh_requested.clear()
                 snapshot = usage_snapshot()
-                payload = snapshot.payload()
+                last_poll = now
+            payload = with_codex_activity(snapshot).payload()
+            if payload != last_payload:
                 log(f"Sending: {payload}")
                 await client.write_gatt_char(RX_CHAR_UUID, payload.encode("utf-8"), response=False)
-                last_poll = now
-            await asyncio.sleep(2)
+                last_payload = payload
+            await asyncio.sleep(ACTIVITY_POLL_INTERVAL)
 
 
 async def send_ble_once(address: str) -> None:
-    snapshot = usage_snapshot()
+    snapshot = with_codex_activity(usage_snapshot())
     payload = snapshot.payload()
     async with BleakClient(address) as client:
         log(f"Connected, sending once: {payload}")
@@ -456,17 +632,26 @@ def send_serial_payload(port: str, payload: str) -> None:
 
 async def run_serial_loop(port: str, once: bool) -> int:
     if once:
-        snapshot = usage_snapshot()
+        snapshot = with_codex_activity(usage_snapshot())
         send_serial_payload(port, snapshot.payload())
         return 0
 
     ser = open_serial_connection(port)
     try:
         time.sleep(5.0)
+        snapshot = usage_snapshot()
+        last_poll = time.monotonic()
+        last_payload = ""
         while True:
-            snapshot = usage_snapshot()
-            write_serial_payload(ser, snapshot.payload())
-            await asyncio.sleep(POLL_INTERVAL)
+            now = time.monotonic()
+            if now - last_poll >= POLL_INTERVAL:
+                snapshot = usage_snapshot()
+                last_poll = now
+            payload = with_codex_activity(snapshot).payload()
+            if payload != last_payload:
+                write_serial_payload(ser, payload)
+                last_payload = payload
+            await asyncio.sleep(ACTIVITY_POLL_INTERVAL)
     finally:
         try:
             ser.setDTR(False)
@@ -489,7 +674,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     if args.print:
-        print(usage_snapshot().payload())
+        print(with_codex_activity(usage_snapshot()).payload())
         return 0
 
     if args.transport == "serial":

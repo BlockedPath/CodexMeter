@@ -3,6 +3,8 @@
 #include <M5Unified.h>
 #include "ble.h"
 #include "data.h"
+#include "codex_icon.h"
+#include "sukuna_sprite.h"
 
 static UsageData usage = {};
 static int screen = 0;
@@ -21,6 +23,15 @@ static constexpr uint16_t ATOM_BG = 0x0000;
 static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
 static constexpr uint16_t ATOM_RULE = 0x2965;
+static constexpr uint16_t ATOM_CARD = 0x0841;
+static constexpr uint16_t CODEX_BLUE = 0x3A7F;
+static constexpr uint16_t CODEX_BLUE_DARK = 0x181F;
+static constexpr uint16_t CODEX_LILAC = 0xA57F;
+static constexpr uint16_t CODEX_WHITE = 0xF7BE;
+static constexpr uint16_t PET_SKIN = 0xF5B3;
+static constexpr uint16_t PET_HAIR = 0xD34F;
+static constexpr uint16_t PET_COAT = 0x18A3;
+static constexpr uint16_t PET_ACCENT = 0xF6C7;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
 static constexpr uint16_t PET_FRAME_MS = 180;
 
@@ -59,6 +70,20 @@ static const char* const pet_messages[] = {
 };
 static constexpr uint8_t PET_MESSAGE_COUNT = sizeof(pet_messages) / sizeof(pet_messages[0]);
 
+static const char* current_pet_message() {
+    if (usage.pet_message[0] != '\0') {
+        return usage.pet_message;
+    }
+    return pet_messages[pet_message_idx];
+}
+
+static const char* current_pet_title() {
+    if (usage.pet_title[0] != '\0') {
+        return usage.pet_title;
+    }
+    return "Codex";
+}
+
 static void present_canvas() {
     if (screen_canvas_ready) {
         screen_canvas.pushSprite(0, 0);
@@ -82,10 +107,14 @@ static void draw_bar(int x, int y, int w, int h, int pct, uint16_t color) {
 }
 
 static void draw_codex_mark(int x, int y) {
-    screen_canvas.drawCircle(x + 14, y + 14, 11, ATOM_TEXT);
-    screen_canvas.drawCircle(x + 14, y + 14, 7, ATOM_DIM);
-    screen_canvas.drawFastHLine(x + 7, y + 14, 14, ATOM_TEXT);
-    screen_canvas.drawFastVLine(x + 14, y + 7, 14, ATOM_TEXT);
+    for (int iy = 0; iy < CODEX_ICON_H; iy++) {
+        for (int ix = 0; ix < CODEX_ICON_W; ix++) {
+            uint16_t color = pgm_read_word(&CODEX_ICON[iy * CODEX_ICON_W + ix]);
+            if (color != CODEX_ICON_TRANSPARENT) {
+                screen_canvas.drawPixel(x + ix, y + iy, color);
+            }
+        }
+    }
 }
 
 static void draw_header() {
@@ -97,6 +126,17 @@ static void draw_header() {
     screen_canvas.setTextSize(1);
     screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
     screen_canvas.drawString("usage", 42, 23);
+}
+
+static void draw_sukuna_sprite(int x, int y) {
+    for (int sy = 0; sy < SUKUNA_SPRITE_H; sy++) {
+        for (int sx = 0; sx < SUKUNA_SPRITE_W; sx++) {
+            uint16_t color = pgm_read_word(&SUKUNA_SPRITE[sy * SUKUNA_SPRITE_W + sx]);
+            if (color != SUKUNA_TRANSPARENT) {
+                screen_canvas.drawPixel(x + sx, y + sy, color);
+            }
+        }
+    }
 }
 
 static void fmt_reset(int mins, char* buf, size_t len) {
@@ -208,22 +248,19 @@ static void draw_pet(bool force = false) {
     }
 
     screen_canvas.fillScreen(ATOM_BG);
-    screen_canvas.setTextDatum(top_center);
-    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.fillRoundRect(3, 3, 122, 42, 7, ATOM_CARD);
+    screen_canvas.drawRoundRect(3, 3, 122, 42, 7, ATOM_RULE);
+    screen_canvas.setTextDatum(top_left);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_CARD);
     screen_canvas.setTextSize(1);
-    screen_canvas.drawString(pet_messages[pet_message_idx], 64, 5);
-    screen_canvas.drawFastHLine(22, 18, 84, ATOM_RULE);
+    screen_canvas.drawString(current_pet_title(), 9, 9);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_CARD);
+    screen_canvas.setTextSize(1);
+    screen_canvas.drawString(current_pet_message(), 9, 25);
 
     int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
-    int cx = 64;
-    int cy = 68;
-    screen_canvas.drawCircle(cx, cy, 24 + pulse / 3, ATOM_DIM);
-    screen_canvas.drawCircle(cx, cy, 16 + pulse / 4, ATOM_TEXT);
-    screen_canvas.fillCircle(cx, cy, 6 + pulse / 3, ATOM_TEXT);
-    screen_canvas.drawFastHLine(cx - 34, cy, 20, ATOM_RULE);
-    screen_canvas.drawFastHLine(cx + 14, cy, 20, ATOM_RULE);
-    screen_canvas.drawFastVLine(cx, cy - 34, 20, ATOM_RULE);
-    screen_canvas.drawFastVLine(cx, cy + 14, 20, ATOM_RULE);
+    int bob = pulse / 4;
+    draw_sukuna_sprite((128 - SUKUNA_SPRITE_W) / 2, 48 - bob);
 
     present_canvas();
 
@@ -254,6 +291,8 @@ static bool parse_json(const char* json, UsageData* out) {
     out->weekly_pct = doc["w"] | 0.0f;
     out->weekly_reset_mins = doc["wr"] | -1;
     strlcpy(out->status, doc["st"] | "unknown", sizeof(out->status));
+    strlcpy(out->pet_title, doc["pt"] | "", sizeof(out->pet_title));
+    strlcpy(out->pet_message, doc["m"] | "", sizeof(out->pet_message));
     out->ok = doc["ok"] | false;
     out->valid = true;
     return true;
@@ -263,7 +302,7 @@ static void handle_payload(const char* data) {
     Serial.printf("RX: %s\n", data);
     if (parse_json(data, &usage)) {
         ble_send_ack();
-        if (screen == 0) {
+        if (screen == 0 || screen == 2) {
             draw_screen(true);
         }
     } else {
