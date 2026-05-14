@@ -128,10 +128,11 @@ static void draw_header() {
     screen_canvas.drawString("usage", 42, 23);
 }
 
-static void draw_sukuna_sprite(int x, int y) {
+static void draw_sukuna_sprite(int x, int y, int frame) {
+    int sprite_frame = frame % SUKUNA_SPRITE_FRAMES;
     for (int sy = 0; sy < SUKUNA_SPRITE_H; sy++) {
         for (int sx = 0; sx < SUKUNA_SPRITE_W; sx++) {
-            uint16_t color = pgm_read_word(&SUKUNA_SPRITE[sy * SUKUNA_SPRITE_W + sx]);
+            uint16_t color = pgm_read_word(&SUKUNA_SPRITE[sprite_frame][sy * SUKUNA_SPRITE_W + sx]);
             if (color != SUKUNA_TRANSPARENT) {
                 screen_canvas.drawPixel(x + sx, y + sy, color);
             }
@@ -261,7 +262,7 @@ static void draw_pet(bool force = false) {
 
     int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
     int bob = pulse / 4;
-    draw_sukuna_sprite((128 - SUKUNA_SPRITE_W) / 2, 48 - bob);
+    draw_sukuna_sprite((128 - SUKUNA_SPRITE_W) / 2, 48 - bob, next_frame);
 
     present_canvas();
 
