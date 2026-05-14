@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 #include <pgmspace.h>
 #include "ble.h"
+#include "codex_app_icon.h"
 #include "data.h"
 #include "sukuna_pet.h"
 
@@ -131,15 +132,19 @@ static void draw_bar(int x, int y, int w, int h, int pct, uint16_t color) {
     }
 }
 
-static void draw_codex_mark(int x, int y) {
-    screen_canvas.drawCircle(x + 14, y + 14, 11, ATOM_TEXT);
-    screen_canvas.drawCircle(x + 14, y + 14, 7, ATOM_DIM);
-    screen_canvas.drawFastHLine(x + 7, y + 14, 14, ATOM_TEXT);
-    screen_canvas.drawFastVLine(x + 14, y + 7, 14, ATOM_TEXT);
+static void draw_codex_icon(int x, int y) {
+    for (int iy = 0; iy < CODEX_APP_ICON_H; iy++) {
+        for (int ix = 0; ix < CODEX_APP_ICON_W; ix++) {
+            int idx = iy * CODEX_APP_ICON_W + ix;
+            uint8_t a = codex_app_icon_alpha[idx];
+            if (a < 16) continue;
+            screen_canvas.drawPixel(x + ix, y + iy, codex_app_icon_rgb565[idx]);
+        }
+    }
 }
 
 static void draw_header() {
-    draw_codex_mark(4, 2);
+    draw_codex_icon(4, 2);
     screen_canvas.setTextDatum(top_left);
     screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
     screen_canvas.setTextSize(2);
