@@ -1,11 +1,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <M5Unified.h>
-#include <pgmspace.h>
 #include "ble.h"
-#include "codex_app_icon.h"
 #include "data.h"
-#include "sukuna_pet.h"
 
 static UsageData usage = {};
 static int screen = 0;
@@ -25,6 +22,7 @@ static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
 static constexpr uint16_t ATOM_RULE = 0x2965;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
+static constexpr uint16_t PET_FRAME_MS = 180;
 
 static const char* const pet_messages[] = {
     "Accomplishing", "Elucidating", "Perusing",
@@ -83,19 +81,15 @@ static void draw_bar(int x, int y, int w, int h, int pct, uint16_t color) {
     }
 }
 
-static void draw_codex_icon(int x, int y) {
-    for (int iy = 0; iy < CODEX_APP_ICON_H; iy++) {
-        for (int ix = 0; ix < CODEX_APP_ICON_W; ix++) {
-            int idx = iy * CODEX_APP_ICON_W + ix;
-            uint8_t a = codex_app_icon_alpha[idx];
-            if (a < 16) continue;
-            screen_canvas.drawPixel(x + ix, y + iy, codex_app_icon_rgb565[idx]);
-        }
-    }
+static void draw_codex_mark(int x, int y) {
+    screen_canvas.drawCircle(x + 14, y + 14, 11, ATOM_TEXT);
+    screen_canvas.drawCircle(x + 14, y + 14, 7, ATOM_DIM);
+    screen_canvas.drawFastHLine(x + 7, y + 14, 14, ATOM_TEXT);
+    screen_canvas.drawFastVLine(x + 14, y + 7, 14, ATOM_TEXT);
 }
 
 static void draw_header() {
-    draw_codex_icon(4, 2);
+    draw_codex_mark(4, 2);
     screen_canvas.setTextDatum(top_left);
     screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
     screen_canvas.setTextSize(2);
@@ -193,8 +187,8 @@ static void draw_pet(bool force = false) {
         next_frame = 0;
         last_pet_frame = now;
         last_pet_message = now;
-    } else if (now - last_pet_frame >= sukuna_pet_frame_ms[pet_frame]) {
-        next_frame = (pet_frame + 1) % SUKUNA_PET_FRAMES;
+    } else if (now - last_pet_frame >= PET_FRAME_MS) {
+        next_frame = (pet_frame + 1) % 24;
         last_pet_frame = now;
         redraw = true;
     }
@@ -220,16 +214,16 @@ static void draw_pet(bool force = false) {
     screen_canvas.drawString(pet_messages[pet_message_idx], 64, 5);
     screen_canvas.drawFastHLine(22, 18, 84, ATOM_RULE);
 
-    int x0 = (128 - SUKUNA_PET_W) / 2;
-    int y0 = 24;
-    for (int y = 0; y < SUKUNA_PET_H; y++) {
-        for (int x = 0; x < SUKUNA_PET_W; x++) {
-            int idx = y * SUKUNA_PET_W + x;
-            if (pgm_read_byte(&sukuna_pet_alpha[next_frame][idx]) < 16) continue;
-            uint16_t color = pgm_read_word(&sukuna_pet_rgb565[next_frame][idx]);
-            screen_canvas.drawPixel(x0 + x, y0 + y, color);
-        }
-    }
+    int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
+    int cx = 64;
+    int cy = 68;
+    screen_canvas.drawCircle(cx, cy, 24 + pulse / 3, ATOM_DIM);
+    screen_canvas.drawCircle(cx, cy, 16 + pulse / 4, ATOM_TEXT);
+    screen_canvas.fillCircle(cx, cy, 6 + pulse / 3, ATOM_TEXT);
+    screen_canvas.drawFastHLine(cx - 34, cy, 20, ATOM_RULE);
+    screen_canvas.drawFastHLine(cx + 14, cy, 20, ATOM_RULE);
+    screen_canvas.drawFastVLine(cx, cy - 34, 20, ATOM_RULE);
+    screen_canvas.drawFastVLine(cx, cy + 14, 20, ATOM_RULE);
 
     present_canvas();
 

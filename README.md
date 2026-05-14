@@ -1,14 +1,20 @@
 # CodexMeter
 
-A tiny AtomS3 desk display for Codex usage, connection status, and a built-in Codex pet.
-Forked from https://github.com/HermannBjorgvin/Clawdmeter
+A tiny AtomS3 desk display for Codex usage and connection status.
+
+Forked from https://github.com/HermannBjorgvin/Clawdmeter.
+
 CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws three button-cycled screens on the built-in display:
 
 - usage remaining for the current and weekly Codex windows
 - USB/BLE connection status
-- an animated Sukuna Codex pet with the same rotating work-status text used in the Codex-style UI
+- a simple local status animation with rotating work-status text
 
 The companion daemon runs on your computer and pushes compact JSON updates to the device over USB serial by default. BLE support still exists, but USB serial is the most reliable path while this is a small desk prototype.
+
+![CodexMeter usage screen showing daily and weekly remaining usage](docs/images/codexmeter-usage.jpeg)
+
+![CodexMeter status screen on the AtomS3 display](docs/images/codexmeter-status.jpeg)
 
 ## Hardware
 
@@ -16,7 +22,7 @@ The companion daemon runs on your computer and pushes compact JSON updates to th
 - USB-C data cable
 - macOS or Linux host
 
-This README treats the AtomS3 as the supported target. Some inherited firmware files and assets from earlier experiments still exist in the repository, but the active build is `m5stack_atoms3`.
+This README treats the AtomS3 as the supported target. Older inherited display experiments and bundled third-party art/font assets have been removed so the public repository stays lean.
 
 ## Quick Start
 
@@ -152,7 +158,7 @@ Press the AtomS3 button to cycle screens:
 
 1. **Usage** - current and weekly Codex remaining percentages plus reset timing
 2. **Connection** - USB/BLE status and device identity
-3. **Sukuna** - animated Codex pet with rotating Codex-style status phrases
+3. **Status** - simple built-in animation with rotating status phrases
 
 Hold the button to clear BLE bonds.
 
@@ -185,45 +191,20 @@ BLE uses the same payload on the RX characteristic.
 | TX characteristic | `434f4445-584d-4554-4552-000000000003` |
 | Refresh characteristic | `434f4445-584d-4554-4552-000000000004` |
 
-## Pet Assets
-
-The AtomS3 firmware currently bakes Sukuna from the local Codex pet package:
-
-```text
-~/.codex/pets/sukuna/pet.json
-~/.codex/pets/sukuna/spritesheet.webp
-```
-
-Regenerate the firmware header:
-
-```bash
-python3 tools/pet_to_lvgl.py \
-  --pet-dir ~/.codex/pets/sukuna \
-  --state all \
-  --symbol sukuna_pet \
-  --format atom \
-  --target-w 96 \
-  --target-h 96 \
-  --out firmware/src/sukuna_pet.h
-```
-
-Then rebuild and flash `m5stack_atoms3`.
-
 ## Repository Map
 
 ```text
 firmware/                    PlatformIO firmware
 firmware/src/atom_main.cpp   AtomS3 app entrypoint
-firmware/src/sukuna_pet.h    Generated baked pet frames
 daemon/codex-usage-daemon.py Host daemon
 install.sh                   LaunchAgent/systemd installer
 flash.sh                     Build and upload helper
-tools/pet_to_lvgl.py         Codex pet atlas converter
+tools/                       Optional local asset conversion helpers
 ```
 
 ## Troubleshooting
 
-**No serial port appears**
+### No serial port appears
 
 Use a USB-C data cable, not a charge-only cable. Try a different port, then run:
 
@@ -231,18 +212,18 @@ Use a USB-C data cable, not a charge-only cable. Try a different port, then run:
 ~/.platformio/penv/bin/pio device list
 ```
 
-**Port changed during flashing**
+### Port changed during flashing
 
 The AtomS3 can re-enumerate while switching between app mode and upload mode. Re-run `pio device list` and retry with the new `/dev/cu.usbmodem...` path.
 
-**Screen is dark after flashing**
+### Screen is dark after flashing
 
 Unplug and replug the AtomS3 without holding the side button. If it stays in upload mode, tap reset or power-cycle it again.
 
-**Daemon sends fallback data**
+### Daemon sends fallback data
 
 Check `~/.codex/auth.json`. If you want API org-cost fallback, set `OPENAI_ADMIN_KEY` in `~/.config/codexmeter/env`.
 
 ## Credits And Asset Note
 
-CodexMeter started as an adaptation of [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter). The repository still contains inherited demo images, generated font files, and older animation data. Treat this as a working prototype until those assets are replaced or their redistribution terms are confirmed.
+CodexMeter started as an adaptation of [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter). Bundled demo images, generated brand-font files, third-party pixel animation data, and local pet art have been removed from this public tree.
