@@ -2,6 +2,6 @@
 __pycache__/
 *.pyc
 .pio/
-Agents.md
-claude.md
-README.md
+Agents.MD
+claude.MD
+README.MD
