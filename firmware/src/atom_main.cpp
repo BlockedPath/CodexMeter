@@ -10,6 +10,7 @@ static ble_state_t last_ble_state = BLE_STATE_INIT;
 static char serial_buf[512];
 static size_t serial_len = 0;
 static int pet_frame = 0;
+static uint8_t selected_pet = 0;
 static uint32_t last_pet_frame = 0;
 static uint8_t pet_message_idx = 0;
 static uint32_t last_pet_message = 0;
@@ -21,8 +22,22 @@ static constexpr uint16_t ATOM_BG = 0x0000;
 static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
 static constexpr uint16_t ATOM_RULE = 0x2965;
+static constexpr uint8_t SCREEN_COUNT = 4;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
 static constexpr uint16_t PET_FRAME_MS = 180;
+
+struct PetDefinition {
+    const char* name;
+    uint16_t accent;
+};
+
+static const PetDefinition pets[] = {
+    {"Orb", 0xD69A},
+    {"Spark", 0xFD20},
+    {"Pixel", 0x07FF},
+    {"Bloom", 0xF81F},
+};
+static constexpr uint8_t PET_COUNT = sizeof(pets) / sizeof(pets[0]);
 
 static const char* const pet_messages[] = {
     "Accomplishing", "Elucidating", "Perusing",
@@ -179,6 +194,66 @@ static void draw_ble() {
     screen_canvas.drawString(ble_get_mac_address(), 64, 100);
 }
 
+static void reset_pet_animation() {
+    pet_frame = 0;
+    pet_message_idx = 0;
+    last_pet_frame = millis();
+    last_pet_message = last_pet_frame;
+}
+
+static void draw_pet_orb(int cx, int cy, int pulse, uint16_t accent) {
+    screen_canvas.drawCircle(cx, cy, 24 + pulse / 3, ATOM_DIM);
+    screen_canvas.drawCircle(cx, cy, 16 + pulse / 4, accent);
+    screen_canvas.fillCircle(cx, cy, 6 + pulse / 3, accent);
+    screen_canvas.drawFastHLine(cx - 34, cy, 20, ATOM_RULE);
+    screen_canvas.drawFastHLine(cx + 14, cy, 20, ATOM_RULE);
+    screen_canvas.drawFastVLine(cx, cy - 34, 20, ATOM_RULE);
+    screen_canvas.drawFastVLine(cx, cy + 14, 20, ATOM_RULE);
+}
+
+static void draw_pet_spark(int cx, int cy, int pulse, uint16_t accent) {
+    int r = 18 + pulse / 2;
+    screen_canvas.drawLine(cx, cy - r - 8, cx, cy + r + 8, accent);
+    screen_canvas.drawLine(cx - r - 8, cy, cx + r + 8, cy, accent);
+    screen_canvas.drawLine(cx - r, cy - r, cx + r, cy + r, ATOM_DIM);
+    screen_canvas.drawLine(cx + r, cy - r, cx - r, cy + r, ATOM_DIM);
+    screen_canvas.fillCircle(cx, cy, 5 + pulse / 4, accent);
+}
+
+static void draw_pet_pixel(int cx, int cy, int pulse, uint16_t accent) {
+    int offset = pulse / 2;
+    screen_canvas.drawRect(cx - 24, cy - 22 + offset, 48, 42, accent);
+    screen_canvas.drawRect(cx - 18, cy - 16 + offset, 36, 30, ATOM_DIM);
+    screen_canvas.fillRect(cx - 11, cy - 6 + offset, 6, 6, accent);
+    screen_canvas.fillRect(cx + 5, cy - 6 + offset, 6, 6, accent);
+    screen_canvas.drawFastHLine(cx - 8, cy + 8 + offset, 16, accent);
+    screen_canvas.drawFastVLine(cx - 30, cy - 6 + offset, 12, ATOM_RULE);
+    screen_canvas.drawFastVLine(cx + 30, cy - 6 + offset, 12, ATOM_RULE);
+}
+
+static void draw_pet_bloom(int cx, int cy, int pulse, uint16_t accent) {
+    int r = 12 + pulse / 3;
+    screen_canvas.fillCircle(cx, cy - r, 9, ATOM_DIM);
+    screen_canvas.fillCircle(cx + r, cy, 9, ATOM_DIM);
+    screen_canvas.fillCircle(cx, cy + r, 9, ATOM_DIM);
+    screen_canvas.fillCircle(cx - r, cy, 9, ATOM_DIM);
+    screen_canvas.drawCircle(cx, cy - r, 9, accent);
+    screen_canvas.drawCircle(cx + r, cy, 9, accent);
+    screen_canvas.drawCircle(cx, cy + r, 9, accent);
+    screen_canvas.drawCircle(cx - r, cy, 9, accent);
+    screen_canvas.fillCircle(cx, cy, 7 + pulse / 4, accent);
+}
+
+static void draw_pet_preview(int cx, int cy, int pulse, uint8_t pet_idx) {
+    const PetDefinition& pet = pets[pet_idx % PET_COUNT];
+    switch (pet_idx % PET_COUNT) {
+        case 1: draw_pet_spark(cx, cy, pulse, pet.accent); break;
+        case 2: draw_pet_pixel(cx, cy, pulse, pet.accent); break;
+        case 3: draw_pet_bloom(cx, cy, pulse, pet.accent); break;
+        default: draw_pet_orb(cx, cy, pulse, pet.accent); break;
+    }
+}
+
 static void draw_pet(bool force = false) {
     uint32_t now = millis();
     int next_frame = pet_frame;
@@ -215,24 +290,55 @@ static void draw_pet(bool force = false) {
     screen_canvas.drawFastHLine(22, 18, 84, ATOM_RULE);
 
     int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
-    int cx = 64;
-    int cy = 68;
-    screen_canvas.drawCircle(cx, cy, 24 + pulse / 3, ATOM_DIM);
-    screen_canvas.drawCircle(cx, cy, 16 + pulse / 4, ATOM_TEXT);
-    screen_canvas.fillCircle(cx, cy, 6 + pulse / 3, ATOM_TEXT);
-    screen_canvas.drawFastHLine(cx - 34, cy, 20, ATOM_RULE);
-    screen_canvas.drawFastHLine(cx + 14, cy, 20, ATOM_RULE);
-    screen_canvas.drawFastVLine(cx, cy - 34, 20, ATOM_RULE);
-    screen_canvas.drawFastVLine(cx, cy + 14, 20, ATOM_RULE);
+    draw_pet_preview(64, 68, pulse, selected_pet);
 
     present_canvas();
 
     pet_frame = next_frame;
 }
 
+static void draw_pet_select(bool force = false) {
+    uint32_t now = millis();
+    if (now - last_pet_frame >= PET_FRAME_MS) {
+        pet_frame = (pet_frame + 1) % 24;
+        last_pet_frame = now;
+    } else if (!force) {
+        return;
+    }
+
+    screen_canvas.fillScreen(ATOM_BG);
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    screen_canvas.setTextSize(1);
+    screen_canvas.drawString("Pet Select", 64, 6);
+    screen_canvas.drawFastHLine(22, 19, 84, ATOM_RULE);
+
+    int pulse = pet_frame < 12 ? pet_frame : 24 - pet_frame;
+    draw_pet_preview(64, 59, pulse, selected_pet);
+
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextColor(pets[selected_pet].accent, ATOM_BG);
+    screen_canvas.setTextSize(2);
+    screen_canvas.drawString(pets[selected_pet].name, 64, 92);
+    screen_canvas.setTextSize(1);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString(String(selected_pet + 1) + "/" + String(PET_COUNT) + " hold for next", 64, 115);
+    present_canvas();
+}
+
+static void select_next_pet() {
+    selected_pet = (selected_pet + 1) % PET_COUNT;
+    reset_pet_animation();
+    draw_pet_select(true);
+}
+
 static void draw_screen(bool force = false) {
     if (screen == 2) {
         draw_pet(force);
+        return;
+    }
+    if (screen == 3) {
+        draw_pet_select(force);
         return;
     }
     if (!force) return;
@@ -331,13 +437,17 @@ void loop() {
     poll_serial_json();
 
     if (M5.BtnA.wasClicked()) {
-        screen = (screen + 1) % 3;
+        screen = (screen + 1) % SCREEN_COUNT;
         draw_screen(true);
     }
 
     if (M5.BtnA.wasHold()) {
-        ble_clear_bonds();
-        draw_screen(true);
+        if (screen == 3) {
+            select_next_pet();
+        } else if (screen == 1) {
+            ble_clear_bonds();
+            draw_screen(true);
+        }
     }
 
     if (ble_has_data()) {
@@ -352,7 +462,7 @@ void loop() {
         }
     }
 
-    if (screen == 2) {
+    if (screen == 2 || screen == 3) {
         draw_screen();
     }
     delay(10);

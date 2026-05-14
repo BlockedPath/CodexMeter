@@ -159,8 +159,9 @@ Press the AtomS3 button to cycle screens:
 1. **Usage** - current and weekly Codex remaining percentages plus reset timing
 2. **Connection** - USB/BLE status and device identity
 3. **Status** - simple built-in animation with rotating status phrases
+4. **Pet Select** - preview the available pets and choose the one shown on the status screen
 
-Hold the button to clear BLE bonds.
+Hold the button on **Pet Select** to cycle pets. Hold the button on **Connection** to clear BLE bonds.
 
 ## Host Protocol
 
