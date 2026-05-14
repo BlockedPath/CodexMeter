@@ -4,7 +4,7 @@ CodexMeter is an ESP32-S3 desk display adapted from Clawdmeter for Codex/OpenAI 
 
 ## Project Shape
 
-- `firmware/`: PlatformIO firmware for M5 Stack ESP32-S3.
+- `firmware/`: PlatformIO firmware for the M5Stack AtomS3 / other M5Stack ESP32-S3 targets.
 - `daemon/codex-usage-daemon.py`: cross-platform BLE host daemon using `bleak`.
 - `install.sh`: installs the daemon as a macOS LaunchAgent or Linux systemd user service.
 
