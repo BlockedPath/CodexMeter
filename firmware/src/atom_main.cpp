@@ -434,7 +434,7 @@ static void handle_payload(const char* data) {
     Serial.printf("RX: %s\n", data);
     if (parse_json(data, &usage)) {
         ble_send_ack();
-        if (screen == 0 || screen == 2) {
+        if (screen == 0) {
             draw_screen(true);
         }
     } else {
