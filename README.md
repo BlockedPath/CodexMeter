@@ -2,7 +2,7 @@
 
 An ESP32 desk display for keeping an eye on Codex/OpenAI usage.
 
-This project is adapted from [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter). The current firmware targets an M5Stack AtomS3 ESP32-S3 with its built-in 0.85-inch display, and the host daemon defaults to USB serial updates for reliability.
+This project is adapted from [HermannBjorgvin/codexmeter](https://github.com/HermannBjorgvin/codexmeter). The current firmware targets an M5Stack AtomS3 ESP32-S3 with its built-in 0.85-inch display, and the host daemon defaults to USB serial updates for reliability.
 
 ## What it shows
 
