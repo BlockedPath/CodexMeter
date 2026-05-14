@@ -16,7 +16,6 @@ static uint8_t selected_pet = 0;
 static uint32_t last_pet_frame = 0;
 static uint8_t pet_message_idx = 0;
 static uint32_t last_pet_message = 0;
-static char pet_status_message[32] = "waiting for host";
 static M5Canvas screen_canvas(&M5.Display);
 static M5Canvas pet_canvas(&M5.Display);
 static M5Canvas message_canvas(&M5.Display);
@@ -160,26 +159,6 @@ static void fmt_reset(int mins, char* buf, size_t len) {
     } else {
         snprintf(buf, len, "%dd%02dh", mins / 1440, (mins % 1440) / 60);
     }
-}
-
-static void update_pet_status_message() {
-    if (!usage.valid) {
-        strlcpy(pet_status_message, "waiting for host", sizeof(pet_status_message));
-        return;
-    }
-
-    if (!usage.ok) {
-        strlcpy(pet_status_message, usage.status[0] ? usage.status : "needs login", sizeof(pet_status_message));
-        return;
-    }
-
-    snprintf(
-        pet_status_message,
-        sizeof(pet_status_message),
-        "5h %d%% / wk %d%%",
-        (int)(usage.session_pct + 0.5f),
-        (int)(usage.weekly_pct + 0.5f)
-    );
 }
 
 static void draw_usage() {
@@ -361,9 +340,7 @@ static void draw_pet(bool force = false) {
     }
 
     if (!force && now - last_pet_message >= PET_MESSAGE_MS) {
-        if (!usage.valid) {
-            pet_message_idx = (pet_message_idx + 1) % PET_MESSAGE_COUNT;
-        }
+        pet_message_idx = (pet_message_idx + 1) % PET_MESSAGE_COUNT;
         last_pet_message = now;
         redraw = true;
         redraw_shell = true;
@@ -386,7 +363,7 @@ static void draw_pet(bool force = false) {
 
     int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
     draw_pet_frame_region(24, pets[selected_pet].kind == PET_KIND_SUKUNA ? 48 : 44, pulse);
-    draw_message_strip(usage.valid ? pet_status_message : pet_messages[pet_message_idx]);
+    draw_message_strip(pet_messages[pet_message_idx]);
 }
 
 static void draw_pet_select(bool force = false) {
@@ -445,7 +422,6 @@ static bool parse_json(const char* json, UsageData* out) {
     strlcpy(out->status, doc["st"] | "unknown", sizeof(out->status));
     out->ok = doc["ok"] | false;
     out->valid = true;
-    update_pet_status_message();
     return true;
 }
 
