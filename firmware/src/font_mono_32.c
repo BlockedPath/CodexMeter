@@ -1,10 +1,22 @@
 /*******************************************************************************
  * Size: 32 px
  * Bpp: 4
- * Opts: --font /home/hermann/Documents/Code/Personal/claude-usage-monitor-sc01-plus/.claude/worktrees/waveshare-esp32-s3-touch-amoled-2.16/assets/DejaVuSansMono.ttf -r 0x20-0x7E,0xB7,0x2026,0x2722,0x2733,0x2736,0x273B,0x273D --size 32 --format lvgl --bpp 4 --no-compress -o /home/hermann/Documents/Code/Personal/claude-usage-monitor-sc01-plus/.claude/worktrees/waveshare-esp32-s3-touch-amoled-2.16/firmware/src/font_mono_32.c --lv-include lvgl.h
+ * Opts: --font assets/DejaVuSansMono.ttf -r 0x20-0x7E,0xB7,0x2026,0x2722,0x2733,0x2736,0x273B,0x273D --size 32 --format lvgl --bpp 4 --no-compress -o firmware/src/font_mono_32.c --lv-include lvgl.h
  ******************************************************************************/
 
+#if defined(__INTELLISENSE__)
+#define FONT_MONO_32_SKIP 1
+#elif defined(__has_include)
+#if __has_include("lvgl.h")
 #include "lvgl.h"
+#else
+#define FONT_MONO_32_SKIP 1
+#endif
+#else
+#include "lvgl.h"
+#endif
+
+#ifndef FONT_MONO_32_SKIP
 
 
 
@@ -2409,4 +2421,4 @@ const lv_font_t font_mono_32 = {
 
 
 
-
+#endif /* FONT_MONO_32_SKIP */

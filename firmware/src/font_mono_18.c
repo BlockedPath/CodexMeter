@@ -1,14 +1,23 @@
 /*******************************************************************************
  * Size: 18 px
  * Bpp: 4
- * Opts: --font /home/hermann/Documents/Code/Personal/claude-usage-monitor-sc01-plus/assets/DejaVuSansMono.ttf -r 0x20-0x7E,0xB7,0x2026,0x2722,0x2733,0x2736,0x273B,0x273D --size 18 --format lvgl --bpp 4 --no-compress -o /home/hermann/Documents/Code/Personal/claude-usage-monitor-sc01-plus/firmware/src/font_mono_18.c --lv-include lvgl.h
+ * Opts: --font /home/hermann/Documents/Code/Personal/codex
+ * -usage-monitor-sc01-plus/assets/DejaVuSansMono.ttf -r 0x20-0x7E,0xB7,0x2026,0x2722,0x2733,0x2736,0x273B,0x273D --size 18 --format lvgl --bpp 4 --no-compress -o /home/hermann/Documents/Code/Personal/codex-usage-monitor-sc01-plus/firmware/src/font_mono_18.c --lv-include lvgl.h
  ******************************************************************************/
 
-#ifdef LV_LVGL_H_INCLUDE_SIMPLE
+#if defined(__INTELLISENSE__)
+#define FONT_MONO_18_SKIP 1
+#elif defined(__has_include)
+#if __has_include("lvgl.h")
 #include "lvgl.h"
+#else
+#define FONT_MONO_18_SKIP 1
+#endif
 #else
 #include "lvgl.h"
 #endif
+
+#ifndef FONT_MONO_18_SKIP
 
 #ifndef FONT_MONO_18
 #define FONT_MONO_18 1
@@ -937,7 +946,6 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0x0, 0x0
 };
 
-
 /*---------------------
  *  GLYPH DESCRIPTION
  *--------------------*/
@@ -1114,7 +1122,6 @@ const lv_font_t font_mono_18 = {
     .user_data = NULL,
 };
 
-
-
 #endif /*#if FONT_MONO_18*/
 
+#endif /* FONT_MONO_18_SKIP */

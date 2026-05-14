@@ -1,5 +1,5 @@
 #!/bin/bash
-# Take a screenshot from the Waveshare AMOLED display via LVGL snapshot.
+# Take a screenshot from the Atom M5 AMOLED display via LVGL snapshot.
 # Usage: ./screenshot.sh [output.png] [port]
 
 OUTPUT="${1:-screenshot.png}"

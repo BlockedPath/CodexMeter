@@ -10,7 +10,7 @@ This project is adapted from [HermannBjorgvin/Clawdmeter](https://github.com/Her
 - **Weekly**: this week's OpenAI API cost as a percentage of `CODEXMETER_WEEKLY_BUDGET_USD`
 - **Fallback mode**: if no OpenAI admin/API key is available, it counts local Codex sessions updated in `~/.codex/session_index.jsonl`
 
-OpenAI does not expose the same Claude-style 5-hour/7-day Codex subscription utilization headers that Clawdmeter uses. CodexMeter therefore uses the official OpenAI organization costs endpoint for real spend tracking, and treats the configured budgets as the meter ceiling.
+OpenAI does not expose the same codex-style 5-hour/7-day Codex subscription utilization headers that Clawdmeter uses. CodexMeter therefore uses the official OpenAI organization costs endpoint for real spend tracking, and treats the configured budgets as the meter ceiling.
 
 ## Hardware
 

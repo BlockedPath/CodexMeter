@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Scrapes animations from claudepix.vercel.app.
+ * Scrapes animations from codexpix.vercel.app.
  * Handles two on-site formats:
  *   1) PRESET via creature-engine.js (idle_*, expression_*, work_*, dance_bounce, dance_sway)
  *   2) Standalone with window.FRAMES + window.PAL (dance_*_dj, dance_djmix)
  *
- * Output: tools/claudepix_data/<name>.json with shape:
+ * Output: tools/codexpix_data/<name>.json with shape:
  *   { filename, name, category, description, palette: ['#RRGGBB',...],
  *     frame_count, frames: [{ hold, grid: number[20][20] }] }
  *
- * Usage: node scrape_claudepix.js [--base URL] [--out DIR]
+ * Usage: node scrape_codexpix.js [--base URL] [--out DIR]
  */
 
 const fs = require('fs');
@@ -19,8 +19,8 @@ const vm = require('vm');
 const args = process.argv.slice(2);
 const opt = (k, def) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : def; };
 
-const BASE = opt('--base', 'https://claudepix.vercel.app');
-const OUT_DIR = path.resolve(opt('--out', path.join(__dirname, 'claudepix_data')));
+const BASE = opt('--base', 'https://codexpix.vercel.app');
+const OUT_DIR = path.resolve(opt('--out', path.join(__dirname, 'codexpix_data')));
 
 async function fetchText(url) {
   const res = await fetch(url);
