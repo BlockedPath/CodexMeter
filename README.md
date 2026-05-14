@@ -1,34 +1,112 @@
 # CodexMeter
 
-An ESP32 desk display for keeping an eye on Codex/OpenAI usage.
+A tiny AtomS3 desk display for Codex usage, connection status, and a built-in Codex pet.
 
-This project is adapted from [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter). The current firmware targets an M5Stack AtomS3 ESP32-S3 with its built-in 0.85-inch display, and the host daemon defaults to USB serial updates for reliability.
+CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws three button-cycled screens on the built-in display:
 
-## What it shows
+- usage remaining for the current and weekly Codex windows
+- USB/BLE connection status
+- an animated Sukuna Codex pet with the same rotating work-status text used in the Codex-style UI
 
-- **Current**: today's OpenAI API cost as a percentage of `CODEXMETER_DAILY_BUDGET_USD`
-- **Weekly**: this week's OpenAI API cost as a percentage of `CODEXMETER_WEEKLY_BUDGET_USD`
-- **Fallback mode**: if no OpenAI admin/API key is available, it counts local Codex sessions updated in `~/.codex/session_index.jsonl`
-
-OpenAI does not expose the same Claude-style 5-hour/7-day Codex subscription utilization headers that Clawdmeter uses. CodexMeter therefore uses the official OpenAI organization costs endpoint for real spend tracking, and treats the configured budgets as the meter ceiling.
+The companion daemon runs on your computer and pushes compact JSON updates to the device over USB serial by default. BLE support still exists, but USB serial is the most reliable path while this is a small desk prototype.
 
 ## Hardware
 
-- [M5Stack AtomS3](https://docs.m5stack.com/en/core/AtomS3)
-- USB-C data cable for flashing and host updates
+- M5Stack AtomS3
+- USB-C data cable
+- macOS or Linux host
 
-## Host setup
+This README treats the AtomS3 as the supported target. Some inherited firmware files and assets from earlier experiments still exist in the repository, but the active build is `m5stack_atoms3`.
+
+## Quick Start
+
+Install Python dependencies:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install platformio -r requirements.txt
-export OPENAI_ADMIN_KEY="sk-admin-..."
-export CODEXMETER_DAILY_BUDGET_USD=10
-export CODEXMETER_WEEKLY_BUDGET_USD=50
+```
+
+Build the AtomS3 firmware:
+
+```bash
+.venv/bin/platformio run -d firmware -e m5stack_atoms3
+```
+
+Flash the device:
+
+```bash
+./flash.sh /dev/cu.usbmodem101 m5stack_atoms3
+```
+
+If macOS gives the board a different port, find it with:
+
+```bash
+~/.platformio/penv/bin/pio device list
+```
+
+AtomS3 upload ports commonly look like:
+
+```text
+/dev/cu.usbmodem101
+/dev/cu.usbmodem1101
+/dev/cu.usbmodemDC5475CBBC601
+```
+
+## Upload Mode
+
+Sometimes the AtomS3 will show up in normal app mode and `esptool` will fail with:
+
+```text
+Failed to connect to ESP32-S3: No serial data received
+```
+
+Put it into upload mode:
+
+1. Hold the AtomS3 side button.
+2. Keep holding until the internal green LED lights.
+3. Release the button.
+4. Run `./flash.sh <port> m5stack_atoms3` again.
+
+The port name may change after this gesture, so re-run `pio device list` if flashing says the port disappeared.
+
+## Running The Daemon
+
+Print the current payload without sending it:
+
+```bash
 .venv/bin/python ./daemon/codex-usage-daemon.py --print
 ```
 
-For background service installs, put the same settings in `~/.config/codexmeter/env`:
+Send one USB serial update:
+
+```bash
+.venv/bin/python ./daemon/codex-usage-daemon.py --transport serial --once
+```
+
+Run continuously:
+
+```bash
+.venv/bin/python ./daemon/codex-usage-daemon.py --transport serial
+```
+
+Pin a specific serial port if auto-detection picks the wrong one:
+
+```bash
+.venv/bin/python ./daemon/codex-usage-daemon.py \
+  --transport serial \
+  --serial-port /dev/cu.usbmodemDC5475CBBC601
+```
+
+## Usage Sources
+
+The daemon tries sources in this order:
+
+1. **Codex/ChatGPT OAuth usage** from `~/.codex/auth.json`
+2. **OpenAI organization costs** from `OPENAI_ADMIN_KEY` or `OPENAI_API_KEY`
+3. **Local Codex activity fallback** from `~/.codex/session_index.jsonl`
+
+For most Codex users, no API key is needed if the local Codex auth file is present. If you want OpenAI API org cost tracking as a fallback, create `~/.config/codexmeter/env`:
 
 ```bash
 mkdir -p ~/.config/codexmeter
@@ -36,64 +114,135 @@ chmod 700 ~/.config/codexmeter
 $EDITOR ~/.config/codexmeter/env
 ```
 
-Run it continuously over USB serial:
+Example env file:
 
 ```bash
-.venv/bin/python ./daemon/codex-usage-daemon.py --transport serial
+OPENAI_ADMIN_KEY=sk-admin-...
+CODEXMETER_DAILY_BUDGET_USD=10
+CODEXMETER_WEEKLY_BUDGET_USD=50
+CODEXMETER_TRANSPORT=serial
+CODEXMETER_POLL_INTERVAL=60
 ```
 
-Install it as a background service:
+## Background Service
+
+Install the daemon as a user service:
 
 ```bash
 ./install.sh
 ```
 
-On macOS, logs go to `~/Library/Logs/codexmeter.log`. On Linux, use:
+On macOS this creates a LaunchAgent and writes logs to:
+
+```text
+~/Library/Logs/codexmeter.log
+~/Library/Logs/codexmeter.err.log
+```
+
+On Linux:
 
 ```bash
 systemctl --user status codex-usage-daemon
 journalctl --user -u codex-usage-daemon -f
 ```
 
-## Flash firmware
+## Device UI
 
-```bash
-./flash.sh /dev/cu.usbmodem101
-```
+Press the AtomS3 button to cycle screens:
 
-If auto-upload cannot enter the ESP32-S3 bootloader, hold the AtomS3 reset/side button until the internal green LED lights, release it, then rerun the flash command. In download mode the port is usually `/dev/cu.usbmodem101`.
+1. **Usage** - current and weekly Codex remaining percentages plus reset timing
+2. **Connection** - USB/BLE status and device identity
+3. **Sukuna** - animated Codex pet with rotating Codex-style status phrases
 
-After flashing, the daemon sends newline-delimited compact JSON over USB serial. BLE support is still present in firmware, but USB serial is the default transport.
+Hold the button to clear BLE bonds.
 
 ## Host Protocol
 
-USB serial payloads are one compact JSON object per line:
+The host sends one compact JSON object per line over USB serial:
 
 ```json
-{"s":45,"sr":120,"w":28,"wr":7200,"st":"$2.31 today","ok":true}
+{"s":45,"sr":120,"w":28,"wr":7200,"st":"120 credits","ok":true}
 ```
 
-The firmware also exposes a custom BLE GATT service for future wireless use.
+Fields:
+
+| Field | Meaning |
+| --- | --- |
+| `s` | Current window remaining percentage |
+| `sr` | Current window reset time in minutes |
+| `w` | Weekly or secondary window remaining percentage |
+| `wr` | Weekly or secondary reset time in minutes |
+| `st` | Short status string |
+| `ok` | Whether live usage data was available |
+
+BLE uses the same payload on the RX characteristic.
 
 | Item | UUID |
 | --- | --- |
-| Data Service | `434f4445-584d-4554-4552-000000000001` |
-| RX Characteristic | `434f4445-584d-4554-4552-000000000002` |
-| TX Characteristic | `434f4445-584d-4554-4552-000000000003` |
-| Refresh Characteristic | `434f4445-584d-4554-4552-000000000004` |
+| Device name | `Codex Controller` |
+| Data service | `434f4445-584d-4554-4552-000000000001` |
+| RX characteristic | `434f4445-584d-4554-4552-000000000002` |
+| TX characteristic | `434f4445-584d-4554-4552-000000000003` |
+| Refresh characteristic | `434f4445-584d-4554-4552-000000000004` |
 
-Payload written to BLE RX:
+## Pet Assets
 
-```json
-{"s":45,"sr":120,"w":28,"wr":7200,"st":"$2.31 today","ok":true}
+The AtomS3 firmware currently bakes Sukuna from the local Codex pet package:
+
+```text
+~/.codex/pets/sukuna/pet.json
+~/.codex/pets/sukuna/spritesheet.webp
 ```
 
-Fields: `s` = current %, `sr` = current reset minutes, `w` = weekly %, `wr` = weekly reset minutes, `st` = short status, `ok` = success flag.
+Regenerate the firmware header:
 
-## Button
+```bash
+python3 tools/pet_to_lvgl.py \
+  --pet-dir ~/.codex/pets/sukuna \
+  --state all \
+  --symbol sukuna_pet \
+  --format atom \
+  --target-w 96 \
+  --target-h 96 \
+  --out firmware/src/sukuna_pet.h
+```
 
-Press the AtomS3 front button to cycle between the usage screen and the transport/status screen. Hold it to clear BLE bonds.
+Then rebuild and flash `m5stack_atoms3`.
 
-## Credits and Assets
+## Repository Map
 
-This started as a Codex adaptation of Clawdmeter. The inherited demo images, pixel-art animation data, and brand-font generated files come from the upstream project and may carry third-party licensing restrictions. Treat this as a working prototype until those assets are replaced with clean CodexMeter-owned art/fonts.
+```text
+firmware/                    PlatformIO firmware
+firmware/src/atom_main.cpp   AtomS3 app entrypoint
+firmware/src/sukuna_pet.h    Generated baked pet frames
+daemon/codex-usage-daemon.py Host daemon
+install.sh                   LaunchAgent/systemd installer
+flash.sh                     Build and upload helper
+tools/pet_to_lvgl.py         Codex pet atlas converter
+```
+
+## Troubleshooting
+
+**No serial port appears**
+
+Use a USB-C data cable, not a charge-only cable. Try a different port, then run:
+
+```bash
+~/.platformio/penv/bin/pio device list
+```
+
+**Port changed during flashing**
+
+The AtomS3 can re-enumerate while switching between app mode and upload mode. Re-run `pio device list` and retry with the new `/dev/cu.usbmodem...` path.
+
+**Screen is dark after flashing**
+
+Unplug and replug the AtomS3 without holding the side button. If it stays in upload mode, tap reset or power-cycle it again.
+
+**Daemon sends fallback data**
+
+Check `~/.codex/auth.json`. If you want API org-cost fallback, set `OPENAI_ADMIN_KEY` in `~/.config/codexmeter/env`.
+
+## Credits And Asset Note
+
+CodexMeter started as an adaptation of [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter). The repository still contains inherited demo images, generated font files, and older animation data. Treat this as a working prototype until those assets are replaced or their redistribution terms are confirmed.

@@ -14,6 +14,8 @@ static char serial_buf[512];
 static size_t serial_len = 0;
 static int pet_frame = 0;
 static uint32_t last_pet_frame = 0;
+static uint8_t pet_message_idx = 0;
+static uint32_t last_pet_message = 0;
 static M5Canvas screen_canvas(&M5.Display);
 static bool screen_canvas_ready = false;
 
@@ -22,6 +24,42 @@ static constexpr uint16_t ATOM_BG = 0x0000;
 static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
 static constexpr uint16_t ATOM_RULE = 0x2965;
+static constexpr uint16_t PET_MESSAGE_MS = 4000;
+
+static const char* const pet_messages[] = {
+    "Accomplishing", "Elucidating", "Perusing",
+    "Actioning", "Enchanting", "Philosophising",
+    "Actualizing", "Envisioning", "Pondering",
+    "Baking", "Finagling", "Pontificating",
+    "Booping", "Flibbertigibbeting", "Processing",
+    "Brewing", "Forging", "Puttering",
+    "Calculating", "Forming", "Puzzling",
+    "Cerebrating", "Frolicking", "Reticulating",
+    "Channelling", "Generating", "Ruminating",
+    "Churning", "Germinating", "Scheming",
+    "Clauding", "Hatching", "Schlepping",
+    "Coalescing", "Herding", "Shimmying",
+    "Cogitating", "Honking", "Shucking",
+    "Combobulating", "Hustling", "Simmering",
+    "Computing", "Ideating", "Smooshing",
+    "Concocting", "Imagining", "Spelunking",
+    "Conjuring", "Incubating", "Spinning",
+    "Considering", "Inferring", "Stewing",
+    "Contemplating", "Jiving", "Sussing",
+    "Cooking", "Manifesting", "Synthesizing",
+    "Crafting", "Marinating", "Thinking",
+    "Creating", "Meandering", "Tinkering",
+    "Crunching", "Moseying", "Transmuting",
+    "Deciphering", "Mulling", "Unfurling",
+    "Deliberating", "Mustering", "Unravelling",
+    "Determining", "Musing", "Vibing",
+    "Discombobulating", "Noodling", "Wandering",
+    "Divining", "Percolating", "Whirring",
+    "Doing", "Wibbling",
+    "Effecting", "Wizarding",
+    "Working", "Wrangling",
+};
+static constexpr uint8_t PET_MESSAGE_COUNT = sizeof(pet_messages) / sizeof(pet_messages[0]);
 
 static void present_canvas() {
     if (screen_canvas_ready) {
@@ -150,25 +188,40 @@ static void draw_ble() {
 static void draw_pet(bool force = false) {
     uint32_t now = millis();
     int next_frame = pet_frame;
+    bool redraw = force;
     if (force) {
         next_frame = 0;
         last_pet_frame = now;
+        last_pet_message = now;
     } else if (now - last_pet_frame >= sukuna_pet_frame_ms[pet_frame]) {
         next_frame = (pet_frame + 1) % SUKUNA_PET_FRAMES;
         last_pet_frame = now;
-    } else {
+        redraw = true;
+    }
+
+    if (!force && now - last_pet_message >= PET_MESSAGE_MS) {
+        pet_message_idx = (pet_message_idx + 1) % PET_MESSAGE_COUNT;
+        last_pet_message = now;
+        redraw = true;
+    }
+
+    if (!redraw) {
         return;
+    }
+
+    if (force) {
+        pet_message_idx = 0;
     }
 
     screen_canvas.fillScreen(ATOM_BG);
     screen_canvas.setTextDatum(top_center);
-    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
-    screen_canvas.setTextSize(2);
-    screen_canvas.drawString("Sukuna", 64, 4);
-    screen_canvas.drawFastHLine(18, 24, 92, ATOM_RULE);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.setTextSize(1);
+    screen_canvas.drawString(pet_messages[pet_message_idx], 64, 5);
+    screen_canvas.drawFastHLine(22, 18, 84, ATOM_RULE);
 
     int x0 = (128 - SUKUNA_PET_W) / 2;
-    int y0 = 28;
+    int y0 = 24;
     for (int y = 0; y < SUKUNA_PET_H; y++) {
         for (int x = 0; x < SUKUNA_PET_W; x++) {
             int idx = y * SUKUNA_PET_W + x;
