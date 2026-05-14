@@ -316,7 +316,20 @@ def latest_session_file() -> Path | None:
 
 
 def compact_text(value: str, limit: int) -> str:
-    text = " ".join(str(value or "").split())
+    replacements = str.maketrans(
+        {
+            "\u2018": "'",
+            "\u2019": "'",
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u2013": "-",
+            "\u2014": "-",
+            "\u2026": "...",
+        }
+    )
+    text = " ".join(str(value or "").translate(replacements).split())
+    text = "".join(ch if 32 <= ord(ch) < 127 else " " for ch in text)
+    text = " ".join(text.split())
     if len(text) <= limit:
         return text
     if limit <= 3:

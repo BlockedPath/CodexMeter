@@ -253,10 +253,11 @@ static void draw_pet(bool force = false) {
     screen_canvas.setTextDatum(top_left);
     screen_canvas.setTextColor(ATOM_TEXT, ATOM_CARD);
     screen_canvas.setTextSize(1);
-    screen_canvas.drawString(current_pet_title(), 9, 9);
-    screen_canvas.setTextColor(ATOM_DIM, ATOM_CARD);
+    screen_canvas.drawString(current_pet_title(), 9, 7);
+    screen_canvas.drawFastHLine(9, 20, 108, ATOM_RULE);
+    screen_canvas.setTextColor(CODEX_WHITE, ATOM_CARD);
     screen_canvas.setTextSize(1);
-    screen_canvas.drawString(current_pet_message(), 9, 25);
+    screen_canvas.drawString(current_pet_message(), 9, 26);
 
     int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
     int bob = pulse / 4;
