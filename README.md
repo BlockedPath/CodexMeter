@@ -1,7 +1,7 @@
 # CodexMeter
 
 A tiny AtomS3 desk display for Codex usage, connection status, and a built-in Codex pet.
-
+Forked from https://github.com/HermannBjorgvin/Clawdmeter
 CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws three button-cycled screens on the built-in display:
 
 - usage remaining for the current and weekly Codex windows
