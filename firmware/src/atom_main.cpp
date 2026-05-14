@@ -18,11 +18,7 @@ static uint32_t last_pet_frame = 0;
 static uint8_t pet_message_idx = 0;
 static uint32_t last_pet_message = 0;
 static M5Canvas screen_canvas(&M5.Display);
-static M5Canvas pet_canvas(&M5.Display);
-static M5Canvas message_canvas(&M5.Display);
 static bool screen_canvas_ready = false;
-static bool pet_canvas_ready = false;
-static bool message_canvas_ready = false;
 
 static constexpr uint8_t ATOM_BRIGHTNESS = 72;
 static constexpr uint16_t ATOM_BG = 0x0000;
@@ -32,10 +28,6 @@ static constexpr uint16_t ATOM_RULE = 0x2965;
 static constexpr uint8_t SCREEN_COUNT = 4;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
 static constexpr uint16_t PET_FRAME_MS = 240;
-static constexpr int PET_CANVAS_W = 128;
-static constexpr int PET_CANVAS_H = 104;
-static constexpr int MESSAGE_CANVAS_W = 128;
-static constexpr int MESSAGE_CANVAS_H = 24;
 
 enum PetKind : uint8_t {
     PET_KIND_SUKUNA,
@@ -97,23 +89,6 @@ static void present_canvas() {
     if (screen_canvas_ready) {
         screen_canvas.pushSprite(0, 0);
     }
-}
-
-static void present_pet_canvas(int y) {
-    if (pet_canvas_ready) {
-        pet_canvas.pushSprite(0, y);
-    }
-}
-
-static void draw_message_strip(const char* message, uint16_t color = ATOM_DIM) {
-    if (!message_canvas_ready) return;
-    message_canvas.fillScreen(ATOM_BG);
-    message_canvas.setTextDatum(top_center);
-    message_canvas.setTextColor(color, ATOM_BG);
-    message_canvas.setTextSize(1);
-    message_canvas.drawString(message, 64, 5);
-    message_canvas.drawFastHLine(22, 18, 84, ATOM_RULE);
-    message_canvas.pushSprite(0, 0);
 }
 
 static uint16_t remaining_color(float pct) {
@@ -310,7 +285,7 @@ static void draw_pet_sukuna(M5Canvas& canvas, int x0, int y0, uint8_t frame) {
 static void draw_pet_preview(M5Canvas& canvas, int cx, int cy, int pulse, uint8_t pet_idx) {
     const PetDefinition& pet = pets[pet_idx % PET_COUNT];
     if (pet.kind == PET_KIND_SUKUNA) {
-        draw_pet_sukuna(canvas, (PET_CANVAS_W - SUKUNA_PET_W) / 2, 0, pet_frame);
+        draw_pet_sukuna(canvas, (128 - SUKUNA_PET_W) / 2, 24, pet_frame);
         return;
     }
 
@@ -322,18 +297,18 @@ static void draw_pet_preview(M5Canvas& canvas, int cx, int cy, int pulse, uint8_
     }
 }
 
-static void draw_pet_frame_region(int y, int cy, int pulse) {
-    if (!pet_canvas_ready) return;
-    pet_canvas.fillScreen(ATOM_BG);
-    draw_pet_preview(pet_canvas, 64, cy, pulse, selected_pet);
-    present_pet_canvas(y);
+static void draw_pet_message(const char* message, uint16_t color = ATOM_DIM) {
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextColor(color, ATOM_BG);
+    screen_canvas.setTextSize(1);
+    screen_canvas.drawString(message, 64, 5);
+    screen_canvas.drawFastHLine(22, 18, 84, ATOM_RULE);
 }
 
 static void draw_pet(bool force = false) {
     uint32_t now = millis();
     int next_frame = pet_frame;
     bool redraw = force;
-    bool redraw_shell = force;
     if (force) {
         next_frame = 0;
         last_pet_frame = now;
@@ -348,7 +323,6 @@ static void draw_pet(bool force = false) {
         pet_message_idx = (pet_message_idx + 1) % PET_MESSAGE_COUNT;
         last_pet_message = now;
         redraw = true;
-        redraw_shell = true;
     }
 
     if (!redraw) {
@@ -359,16 +333,16 @@ static void draw_pet(bool force = false) {
         pet_message_idx = 0;
     }
 
-    if (redraw_shell) {
-        screen_canvas.fillScreen(ATOM_BG);
-        present_canvas();
-    }
-
-    pet_frame = next_frame;
-
     int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
-    draw_pet_frame_region(24, pets[selected_pet].kind == PET_KIND_SUKUNA ? 48 : 44, pulse);
-    draw_message_strip(pet_messages[pet_message_idx]);
+    screen_canvas.fillScreen(ATOM_BG);
+    draw_pet_message(pet_messages[pet_message_idx]);
+    if (pets[selected_pet].kind == PET_KIND_SUKUNA) {
+        draw_pet_sukuna(screen_canvas, (128 - SUKUNA_PET_W) / 2, 24, next_frame);
+    } else {
+        draw_pet_preview(screen_canvas, 64, 68, pulse, selected_pet);
+    }
+    present_canvas();
+    pet_frame = next_frame;
 }
 
 static void draw_pet_select(bool force = false) {
@@ -381,14 +355,19 @@ static void draw_pet_select(bool force = false) {
     }
 
     if (force) {
-        screen_canvas.fillScreen(ATOM_BG);
-        present_canvas();
+        pet_frame = 0;
     }
 
     int pulse = pet_frame < 12 ? pet_frame : 24 - pet_frame;
-    draw_pet_frame_region(22, pets[selected_pet].kind == PET_KIND_SUKUNA ? 48 : 37, pulse);
+    screen_canvas.fillScreen(ATOM_BG);
     String label = String(pets[selected_pet].name) + " " + String(selected_pet + 1) + "/" + String(PET_COUNT);
-    draw_message_strip(label.c_str(), pets[selected_pet].accent);
+    draw_pet_message(label.c_str(), pets[selected_pet].accent);
+    if (pets[selected_pet].kind == PET_KIND_SUKUNA) {
+        draw_pet_sukuna(screen_canvas, (128 - SUKUNA_PET_W) / 2, 24, pet_frame);
+    } else {
+        draw_pet_preview(screen_canvas, 64, 62, pulse, selected_pet);
+    }
+    present_canvas();
 }
 
 static void select_next_pet() {
@@ -484,10 +463,6 @@ void setup() {
     M5.Display.fillScreen(ATOM_BG);
     screen_canvas.setColorDepth(16);
     screen_canvas_ready = screen_canvas.createSprite(128, 128) != nullptr;
-    pet_canvas.setColorDepth(16);
-    pet_canvas_ready = pet_canvas.createSprite(PET_CANVAS_W, PET_CANVAS_H) != nullptr;
-    message_canvas.setColorDepth(16);
-    message_canvas_ready = message_canvas.createSprite(MESSAGE_CANVAS_W, MESSAGE_CANVAS_H) != nullptr;
 
     draw_screen(true);
     Serial.println("BLE init starting");
