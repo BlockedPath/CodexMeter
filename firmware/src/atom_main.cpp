@@ -1,24 +1,32 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <M5Unified.h>
+#include <Preferences.h>
 #include "ble.h"
 #include "data.h"
 #include "codex_icon.h"
+#include "boba_sprite.h"
+#include "gojo_sprite.h"
+#include "itachi_sprite.h"
 #include "sukuna_sprite.h"
 
 static UsageData usage = {};
 static int screen = 0;
+static uint8_t active_pet = 0;
 static ble_state_t last_ble_state = BLE_STATE_INIT;
 static char serial_buf[512];
 static size_t serial_len = 0;
 static int pet_frame = 0;
+static uint8_t pet_anim_state = 0;
 static uint32_t last_pet_frame = 0;
 static uint8_t pet_message_idx = 0;
 static uint32_t last_pet_message = 0;
 static M5Canvas screen_canvas(&M5.Display);
 static bool screen_canvas_ready = false;
+static Preferences preferences;
 
 static constexpr uint8_t ATOM_BRIGHTNESS = 72;
+static constexpr uint8_t SCREEN_COUNT = 4;
 static constexpr uint16_t ATOM_BG = 0x0000;
 static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
@@ -33,7 +41,29 @@ static constexpr uint16_t PET_HAIR = 0xD34F;
 static constexpr uint16_t PET_COAT = 0x18A3;
 static constexpr uint16_t PET_ACCENT = 0xF6C7;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
-static constexpr uint16_t PET_FRAME_MS = 180;
+static constexpr uint16_t PET_SPRITE_W = 52;
+static constexpr uint16_t PET_SPRITE_H = 80;
+static constexpr uint16_t PET_SPRITE_PIXELS = PET_SPRITE_W * PET_SPRITE_H;
+
+struct PetStyle {
+    const char* name;
+    uint16_t accent;
+    uint16_t card;
+    uint8_t state_count;
+    const uint16_t* state_offset;
+    const uint8_t* state_count_frames;
+    const uint16_t* frame_ms;
+    const uint16_t (*rgb565)[PET_SPRITE_PIXELS];
+    const uint8_t (*alpha)[PET_SPRITE_PIXELS];
+};
+
+static const PetStyle pet_styles[] = {
+    {"Sukuna", PET_ACCENT, ATOM_CARD, PET_SUKUNA_STATE_COUNT, pet_sukuna_state_offset, pet_sukuna_state_count, pet_sukuna_frame_ms, pet_sukuna_rgb565, pet_sukuna_alpha},
+    {"Boba", 0x8EFD, 0x1008, PET_BOBA_STATE_COUNT, pet_boba_state_offset, pet_boba_state_count, pet_boba_frame_ms, pet_boba_rgb565, pet_boba_alpha},
+    {"Gojo", 0xC6FF, 0x0844, PET_GOJO_STATE_COUNT, pet_gojo_state_offset, pet_gojo_state_count, pet_gojo_frame_ms, pet_gojo_rgb565, pet_gojo_alpha},
+    {"Itachi", 0xE8E4, 0x1804, PET_ITACHI_STATE_COUNT, pet_itachi_state_offset, pet_itachi_state_count, pet_itachi_frame_ms, pet_itachi_rgb565, pet_itachi_alpha},
+};
+static constexpr uint8_t PET_STYLE_COUNT = sizeof(pet_styles) / sizeof(pet_styles[0]);
 
 static const char* const pet_messages[] = {
     "Accomplishing", "Elucidating", "Perusing",
@@ -70,8 +100,12 @@ static const char* const pet_messages[] = {
 };
 static constexpr uint8_t PET_MESSAGE_COUNT = sizeof(pet_messages) / sizeof(pet_messages[0]);
 
+static bool is_generic_pet_message(const char* message) {
+    return strcmp(message, "Thinking") == 0 || strcmp(message, "Ready") == 0;
+}
+
 static const char* current_pet_message() {
-    if (usage.pet_message[0] != '\0') {
+    if (usage.pet_message[0] != '\0' && !is_generic_pet_message(usage.pet_message)) {
         return usage.pet_message;
     }
     return pet_messages[pet_message_idx];
@@ -82,6 +116,10 @@ static const char* current_pet_title() {
         return usage.pet_title;
     }
     return "Codex";
+}
+
+static const PetStyle& current_pet_style() {
+    return pet_styles[active_pet % PET_STYLE_COUNT];
 }
 
 static void present_canvas() {
@@ -128,12 +166,64 @@ static void draw_header() {
     screen_canvas.drawString("usage", 42, 23);
 }
 
-static void draw_sukuna_sprite(int x, int y, int frame) {
-    int sprite_frame = frame % SUKUNA_SPRITE_FRAMES;
-    for (int sy = 0; sy < SUKUNA_SPRITE_H; sy++) {
-        for (int sx = 0; sx < SUKUNA_SPRITE_W; sx++) {
-            uint16_t color = pgm_read_word(&SUKUNA_SPRITE[sprite_frame][sy * SUKUNA_SPRITE_W + sx]);
-            if (color != SUKUNA_TRANSPARENT) {
+static void draw_fit_string(const char* text, int x, int y, int max_w) {
+    char buf[48];
+    strlcpy(buf, text, sizeof(buf));
+    size_t len = strlen(buf);
+    while (len > 3 && screen_canvas.textWidth(buf) > max_w) {
+        len--;
+        buf[len] = '\0';
+        if (len > 3) {
+            buf[len - 3] = '.';
+            buf[len - 2] = '.';
+            buf[len - 1] = '.';
+        }
+    }
+    screen_canvas.drawString(buf, x, y);
+}
+
+static uint8_t rgb565_r(uint16_t color) {
+    return ((color >> 11) & 0x1F) * 255 / 31;
+}
+
+static uint8_t rgb565_g(uint16_t color) {
+    return ((color >> 5) & 0x3F) * 255 / 63;
+}
+
+static uint8_t rgb565_b(uint16_t color) {
+    return (color & 0x1F) * 255 / 31;
+}
+
+static uint16_t make_rgb565(uint8_t r, uint8_t g, uint8_t b) {
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+
+static uint16_t blend_rgb565(uint16_t base, uint16_t tint, uint8_t amount) {
+    uint8_t inverse = 255 - amount;
+    uint8_t r = (rgb565_r(base) * inverse + rgb565_r(tint) * amount) / 255;
+    uint8_t g = (rgb565_g(base) * inverse + rgb565_g(tint) * amount) / 255;
+    uint8_t b = (rgb565_b(base) * inverse + rgb565_b(tint) * amount) / 255;
+    return make_rgb565(r, g, b);
+}
+
+static uint16_t current_pet_frame_index(const PetStyle& pet, uint8_t state, uint8_t frame) {
+    state %= pet.state_count;
+    uint8_t count = pet.state_count_frames[state];
+    return pet.state_offset[state] + (frame % count);
+}
+
+static void draw_current_pet_sprite(int x, int y, uint8_t state, uint8_t frame) {
+    const PetStyle& pet = current_pet_style();
+    uint16_t sprite_frame = current_pet_frame_index(pet, state, frame);
+    for (int sy = 0; sy < PET_SPRITE_H; sy++) {
+        for (int sx = 0; sx < PET_SPRITE_W; sx++) {
+            int idx = sy * PET_SPRITE_W + sx;
+            uint8_t alpha = pgm_read_byte(&pet.alpha[sprite_frame][idx]);
+            if (alpha > 8) {
+                uint16_t color = pgm_read_word(&pet.rgb565[sprite_frame][idx]);
+                if (alpha < 250) {
+                    color = blend_rgb565(ATOM_BG, color, alpha);
+                }
                 screen_canvas.drawPixel(x + sx, y + sy, color);
             }
         }
@@ -224,18 +314,25 @@ static void draw_pet(bool force = false) {
     uint32_t now = millis();
     int next_frame = pet_frame;
     bool redraw = force;
+    const PetStyle& pet = current_pet_style();
+    uint8_t state = pet_anim_state % pet.state_count;
+    uint8_t frame_count = pet.state_count_frames[state];
+    uint16_t frame_index = current_pet_frame_index(pet, state, pet_frame);
     if (force) {
         next_frame = 0;
+        pet_anim_state = 0;
         last_pet_frame = now;
         last_pet_message = now;
-    } else if (now - last_pet_frame >= PET_FRAME_MS) {
-        next_frame = (pet_frame + 1) % 24;
+    } else if (now - last_pet_frame >= pet.frame_ms[frame_index]) {
+        next_frame = (pet_frame + 1) % frame_count;
         last_pet_frame = now;
         redraw = true;
     }
 
     if (!force && now - last_pet_message >= PET_MESSAGE_MS) {
         pet_message_idx = (pet_message_idx + 1) % PET_MESSAGE_COUNT;
+        pet_anim_state = (pet_anim_state + 1) % pet.state_count;
+        next_frame = 0;
         last_pet_message = now;
         redraw = true;
     }
@@ -249,24 +346,55 @@ static void draw_pet(bool force = false) {
     }
 
     screen_canvas.fillScreen(ATOM_BG);
-    screen_canvas.fillRoundRect(3, 3, 122, 42, 7, ATOM_CARD);
+    screen_canvas.fillRoundRect(3, 3, 122, 42, 7, current_pet_style().card);
     screen_canvas.drawRoundRect(3, 3, 122, 42, 7, ATOM_RULE);
     screen_canvas.setTextDatum(top_left);
-    screen_canvas.setTextColor(ATOM_TEXT, ATOM_CARD);
+    screen_canvas.setTextColor(ATOM_TEXT, current_pet_style().card);
     screen_canvas.setTextSize(1);
-    screen_canvas.drawString(current_pet_title(), 9, 7);
+    draw_fit_string(current_pet_title(), 9, 7, 108);
     screen_canvas.drawFastHLine(9, 20, 108, ATOM_RULE);
-    screen_canvas.setTextColor(CODEX_WHITE, ATOM_CARD);
+    screen_canvas.setTextColor(CODEX_WHITE, current_pet_style().card);
     screen_canvas.setTextSize(1);
-    screen_canvas.drawString(current_pet_message(), 9, 26);
+    draw_fit_string(current_pet_message(), 9, 26, 108);
 
-    int pulse = next_frame < 12 ? next_frame : 24 - next_frame;
-    int bob = pulse / 4;
-    draw_sukuna_sprite((128 - SUKUNA_SPRITE_W) / 2, 48 - bob, next_frame);
+    int pulse = next_frame < 6 ? next_frame : 12 - next_frame;
+    int bob = max(0, pulse / 3);
+    draw_current_pet_sprite((128 - PET_SPRITE_W) / 2, 48 - bob, pet_anim_state, next_frame);
 
     present_canvas();
 
     pet_frame = next_frame;
+}
+
+static void draw_pet_selector() {
+    screen_canvas.fillScreen(ATOM_BG);
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextColor(current_pet_style().accent, ATOM_BG);
+    screen_canvas.setTextSize(1);
+    screen_canvas.drawString(current_pet_style().name, 64, 7);
+    screen_canvas.drawFastHLine(34, 21, 60, ATOM_RULE);
+
+    draw_current_pet_sprite((128 - PET_SPRITE_W) / 2, 30, 0, 0);
+
+    int dot_start = 64 - ((PET_STYLE_COUNT - 1) * 12) / 2;
+    for (uint8_t i = 0; i < PET_STYLE_COUNT; i++) {
+        uint16_t color = i == active_pet ? pet_styles[i].accent : ATOM_RULE;
+        screen_canvas.fillCircle(dot_start + i * 12, 113, i == active_pet ? 3 : 2, color);
+    }
+
+    screen_canvas.setTextDatum(bottom_center);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString("hold for next", 64, 126);
+    present_canvas();
+}
+
+static void select_next_pet() {
+    active_pet = (active_pet + 1) % PET_STYLE_COUNT;
+    preferences.putUChar("pet_v2", active_pet);
+    pet_frame = 0;
+    pet_anim_state = 0;
+    last_pet_frame = millis();
+    draw_pet_selector();
 }
 
 static void draw_screen(bool force = false) {
@@ -277,6 +405,7 @@ static void draw_screen(bool force = false) {
     if (!force) return;
     if (screen == 0) draw_usage();
     else if (screen == 1) draw_ble();
+    else if (screen == 3) draw_pet_selector();
     present_canvas();
 }
 
@@ -354,6 +483,8 @@ void setup() {
     M5.Display.fillScreen(ATOM_BG);
     screen_canvas.setColorDepth(16);
     screen_canvas_ready = screen_canvas.createSprite(128, 128) != nullptr;
+    preferences.begin("codexmeter", false);
+    active_pet = preferences.getUChar("pet_v2", 0) % PET_STYLE_COUNT;
 
     draw_screen(true);
     Serial.println("BLE init starting");
@@ -372,13 +503,17 @@ void loop() {
     poll_serial_json();
 
     if (M5.BtnA.wasClicked()) {
-        screen = (screen + 1) % 3;
+        screen = (screen + 1) % SCREEN_COUNT;
         draw_screen(true);
     }
 
     if (M5.BtnA.wasHold()) {
-        ble_clear_bonds();
-        draw_screen(true);
+        if (screen == 3) {
+            select_next_pet();
+        } else {
+            ble_clear_bonds();
+            draw_screen(true);
+        }
     }
 
     if (ble_has_data()) {

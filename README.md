@@ -4,11 +4,12 @@ A tiny AtomS3 desk display for Codex usage and connection status.
 
 Forked from https://github.com/HermannBjorgvin/Clawdmeter.
 
-CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws three button-cycled screens on the built-in display:
+CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws four button-cycled screens on the built-in display:
 
 - usage remaining for the current and weekly Codex windows
 - USB/BLE connection status
 - a simple local status animation with rotating work-status text
+- pet selection for toggling between the custom Codex pets on this device
 
 The companion daemon runs on your computer and pushes compact JSON updates to the device over USB serial by default. BLE support still exists, but USB serial is the most reliable path while this is a small desk prototype.
 
@@ -159,8 +160,9 @@ Press the AtomS3 button to cycle screens:
 1. **Usage** - current and weekly Codex remaining percentages plus reset timing
 2. **Connection** - USB/BLE status and device identity
 3. **Status** - simple built-in animation with rotating status phrases
+4. **Pets** - hold the button to toggle Sukuna, Boba, Gojo, or Itachi
 
-Hold the button to clear BLE bonds.
+Hold the button on the Usage, Connection, or Status screens to clear BLE bonds.
 
 ## Host Protocol
 
