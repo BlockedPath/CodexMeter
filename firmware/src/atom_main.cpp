@@ -1,20 +1,33 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <M5Unified.h>
+#include <pgmspace.h>
 #include "ble.h"
 #include "codex_app_icon.h"
 #include "data.h"
-#include "pixel_art_screen.h"
+#include "sukuna_pet.h"
 
 static UsageData usage = {};
 static int screen = 0;
 static ble_state_t last_ble_state = BLE_STATE_INIT;
 static char serial_buf[512];
 static size_t serial_len = 0;
-static int pixel_art_frame = 0;
-static uint32_t last_pixel_art = 0;
-static M5Canvas pixel_art_canvas(&M5.Display);
-static bool pixel_art_canvas_ready = false;
+static int pet_frame = 0;
+static uint32_t last_pet_frame = 0;
+static M5Canvas screen_canvas(&M5.Display);
+static bool screen_canvas_ready = false;
+
+static constexpr uint8_t ATOM_BRIGHTNESS = 72;
+static constexpr uint16_t ATOM_BG = 0x0000;
+static constexpr uint16_t ATOM_TEXT = 0xD69A;
+static constexpr uint16_t ATOM_DIM = 0x8C71;
+static constexpr uint16_t ATOM_RULE = 0x2965;
+
+static void present_canvas() {
+    if (screen_canvas_ready) {
+        screen_canvas.pushSprite(0, 0);
+    }
+}
 
 static uint16_t remaining_color(float pct) {
     if (pct <= 20.0f) return RED;
@@ -24,11 +37,11 @@ static uint16_t remaining_color(float pct) {
 
 static void draw_bar(int x, int y, int w, int h, int pct, uint16_t color) {
     pct = constrain(pct, 0, 100);
-    M5.Display.drawRoundRect(x, y, w, h, 3, 0x5AEB);
-    M5.Display.fillRoundRect(x + 1, y + 1, w - 2, h - 2, 2, 0x2124);
+    screen_canvas.drawRoundRect(x, y, w, h, 3, 0x5AEB);
+    screen_canvas.fillRoundRect(x + 1, y + 1, w - 2, h - 2, 2, 0x2124);
     int fill = ((w - 2) * pct) / 100;
     if (fill > 0) {
-        M5.Display.fillRoundRect(x + 1, y + 1, fill, h - 2, 2, color);
+        screen_canvas.fillRoundRect(x + 1, y + 1, fill, h - 2, 2, color);
     }
 }
 
@@ -38,20 +51,20 @@ static void draw_codex_icon(int x, int y) {
             int idx = iy * CODEX_APP_ICON_W + ix;
             uint8_t a = codex_app_icon_alpha[idx];
             if (a < 16) continue;
-            M5.Display.drawPixel(x + ix, y + iy, codex_app_icon_rgb565[idx]);
+            screen_canvas.drawPixel(x + ix, y + iy, codex_app_icon_rgb565[idx]);
         }
     }
 }
 
 static void draw_header() {
     draw_codex_icon(4, 2);
-    M5.Display.setTextDatum(top_left);
-    M5.Display.setTextColor(WHITE, BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.drawString("Codex", 40, 4);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(0xC618, BLACK);
-    M5.Display.drawString("usage", 42, 23);
+    screen_canvas.setTextDatum(top_left);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    screen_canvas.setTextSize(2);
+    screen_canvas.drawString("Codex", 40, 4);
+    screen_canvas.setTextSize(1);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString("usage", 42, 23);
 }
 
 static void fmt_reset(int mins, char* buf, size_t len) {
@@ -67,13 +80,13 @@ static void fmt_reset(int mins, char* buf, size_t len) {
 }
 
 static void draw_usage() {
-    M5.Display.fillScreen(BLACK);
+    screen_canvas.fillScreen(ATOM_BG);
     draw_header();
 
     if (!usage.valid) {
-        M5.Display.setTextDatum(middle_center);
-        M5.Display.setTextColor(0xC618, BLACK);
-        M5.Display.drawString("waiting for host", 64, 76);
+        screen_canvas.setTextDatum(middle_center);
+        screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+        screen_canvas.drawString("waiting for host", 64, 76);
         return;
     }
 
@@ -82,39 +95,39 @@ static void draw_usage() {
     int w = (int)(usage.weekly_pct + 0.5f);
     bool has_percent = usage.ok;
 
-    M5.Display.setTextDatum(top_left);
-    M5.Display.setTextColor(0xC618, BLACK);
-    M5.Display.drawString(has_percent ? "5H LEFT" : "TODAY", 6, 38);
-    M5.Display.setTextColor(WHITE, BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.drawString(has_percent ? String(s) + "%" : "--", 6, 50);
+    screen_canvas.setTextDatum(top_left);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString(has_percent ? "5H LEFT" : "TODAY", 6, 38);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    screen_canvas.setTextSize(2);
+    screen_canvas.drawString(has_percent ? String(s) + "%" : "--", 6, 50);
     draw_bar(6, 73, 116, 11, has_percent ? s : 0, has_percent ? remaining_color(usage.session_pct) : 0x5AEB);
     fmt_reset(usage.session_reset_mins, reset, sizeof(reset));
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(0xC618, BLACK);
-    M5.Display.drawString(has_percent ? String("reset ") + reset : usage.status, 6, 87);
+    screen_canvas.setTextSize(1);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString(has_percent ? String("reset ") + reset : usage.status, 6, 87);
 
-    M5.Display.drawString(has_percent ? "WK LEFT" : "WEEK", 6, 100);
-    M5.Display.setTextColor(WHITE, BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.drawString(has_percent ? String(w) + "%" : "--", 6, 111);
+    screen_canvas.drawString(has_percent ? "WK LEFT" : "WEEK", 6, 100);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    screen_canvas.setTextSize(2);
+    screen_canvas.drawString(has_percent ? String(w) + "%" : "--", 6, 111);
     draw_bar(62, 116, 60, 9, has_percent ? w : 0, has_percent ? remaining_color(usage.weekly_pct) : 0x5AEB);
     if (!has_percent) {
-        M5.Display.setTextSize(1);
-        M5.Display.setTextColor(ORANGE, BLACK);
-        M5.Display.drawString("needs login", 62, 112);
+        screen_canvas.setTextSize(1);
+        screen_canvas.setTextColor(ORANGE, ATOM_BG);
+        screen_canvas.drawString("needs login", 62, 112);
     }
 }
 
 static void draw_ble() {
-    M5.Display.fillScreen(BLACK);
-    M5.Display.setTextDatum(top_center);
-    M5.Display.setTextColor(WHITE, BLACK);
-    M5.Display.setTextSize(1);
-    M5.Display.drawString("Bluetooth", 64, 6);
+    screen_canvas.fillScreen(ATOM_BG);
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    screen_canvas.setTextSize(1);
+    screen_canvas.drawString("Bluetooth", 64, 6);
 
     const char* state = "Init";
-    uint16_t color = 0xC618;
+    uint16_t color = ATOM_DIM;
     switch (ble_get_state()) {
         case BLE_STATE_CONNECTED: state = "Connected"; color = GREEN; break;
         case BLE_STATE_ADVERTISING: state = "Advertising"; color = ORANGE; break;
@@ -122,67 +135,63 @@ static void draw_ble() {
         default: break;
     }
 
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextColor(color, BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.drawString(state, 64, 50);
+    screen_canvas.setTextDatum(middle_center);
+    screen_canvas.setTextColor(color, ATOM_BG);
+    screen_canvas.setTextSize(2);
+    screen_canvas.drawString(state, 64, 50);
 
-    M5.Display.setTextDatum(top_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(0xC618, BLACK);
-    M5.Display.drawString(ble_get_device_name(), 64, 84);
-    M5.Display.drawString(ble_get_mac_address(), 64, 100);
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextSize(1);
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString(ble_get_device_name(), 64, 84);
+    screen_canvas.drawString(ble_get_mac_address(), 64, 100);
 }
 
-static void draw_pixel_art(bool force = false) {
+static void draw_pet(bool force = false) {
     uint32_t now = millis();
-    int next_frame = pixel_art_frame;
+    int next_frame = pet_frame;
     if (force) {
         next_frame = 0;
-        last_pixel_art = now;
-    } else if (now - last_pixel_art >= pixel_art_frame_ms[pixel_art_frame]) {
-        next_frame = (pixel_art_frame + 1) % PIXEL_ART_FRAMES;
-        last_pixel_art = now;
+        last_pet_frame = now;
+    } else if (now - last_pet_frame >= sukuna_pet_frame_ms[pet_frame]) {
+        next_frame = (pet_frame + 1) % SUKUNA_PET_FRAMES;
+        last_pet_frame = now;
     } else {
         return;
     }
 
-    if (pixel_art_canvas_ready) {
-        pixel_art_canvas.fillScreen(BLACK);
-    } else {
-        M5.Display.fillScreen(BLACK);
-    }
+    screen_canvas.fillScreen(ATOM_BG);
+    screen_canvas.setTextDatum(top_center);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    screen_canvas.setTextSize(2);
+    screen_canvas.drawString("Sukuna", 64, 4);
+    screen_canvas.drawFastHLine(18, 24, 92, ATOM_RULE);
 
-    int x0 = (128 - PIXEL_ART_W) / 2;
-    int y0 = (128 - PIXEL_ART_H) / 2;
-    for (int y = 0; y < PIXEL_ART_H; y++) {
-        for (int x = 0; x < PIXEL_ART_W; x++) {
-            int idx = y * PIXEL_ART_W + x;
-            if (pixel_art_alpha[next_frame][idx] < 16) continue;
-            uint16_t color = pixel_art_rgb565[next_frame][idx];
-            if (pixel_art_canvas_ready) {
-                pixel_art_canvas.drawPixel(x0 + x, y0 + y, color);
-            } else {
-                M5.Display.drawPixel(x0 + x, y0 + y, color);
-            }
+    int x0 = (128 - SUKUNA_PET_W) / 2;
+    int y0 = 28;
+    for (int y = 0; y < SUKUNA_PET_H; y++) {
+        for (int x = 0; x < SUKUNA_PET_W; x++) {
+            int idx = y * SUKUNA_PET_W + x;
+            if (pgm_read_byte(&sukuna_pet_alpha[next_frame][idx]) < 16) continue;
+            uint16_t color = pgm_read_word(&sukuna_pet_rgb565[next_frame][idx]);
+            screen_canvas.drawPixel(x0 + x, y0 + y, color);
         }
     }
 
-    if (pixel_art_canvas_ready) {
-        pixel_art_canvas.pushSprite(0, 0);
-    }
+    present_canvas();
 
-    pixel_art_frame = next_frame;
+    pet_frame = next_frame;
 }
 
 static void draw_screen(bool force = false) {
     if (screen == 2) {
-        draw_pixel_art(force);
+        draw_pet(force);
         return;
     }
     if (!force) return;
     if (screen == 0) draw_usage();
     else if (screen == 1) draw_ble();
+    present_canvas();
 }
 
 static bool parse_json(const char* json, UsageData* out) {
@@ -253,10 +262,10 @@ void setup() {
                   M5.Display.height());
     Serial.flush();
     M5.Display.setRotation(0);
-    M5.Display.setBrightness(160);
-    M5.Display.fillScreen(BLACK);
-    pixel_art_canvas.setColorDepth(16);
-    pixel_art_canvas_ready = pixel_art_canvas.createSprite(128, 128) != nullptr;
+    M5.Display.setBrightness(ATOM_BRIGHTNESS);
+    M5.Display.fillScreen(ATOM_BG);
+    screen_canvas.setColorDepth(16);
+    screen_canvas_ready = screen_canvas.createSprite(128, 128) != nullptr;
 
     draw_screen(true);
     Serial.println("BLE init starting");
