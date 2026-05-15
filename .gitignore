@@ -5,3 +5,14 @@ __pycache__/
 .systmp
 .venv/
 .DS_Store
+# Xcode local user state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Xcode build products
+DerivedData/
+build/
+AGENTS.MD
+TODO.MD
+systm.md
