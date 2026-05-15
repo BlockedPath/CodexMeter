@@ -1,0 +1,34 @@
+name: CodexMeterApp
+options:
+  bundleIdPrefix: com.codexmeter
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.codexmeter.ios
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  CodexMeterApp:
+    type: application
+    platform: iOS
+    sources:
+      - CodexMeterApp
+    settings:
+      base:
+        INFOPLIST_FILE: CodexMeterApp/Info.plist
+    info:
+      path: CodexMeterApp/Info.plist
+      properties:
+        NSBluetoothAlwaysUsageDescription: "CodexMeter uses Bluetooth to send usage data to your ESP32 display."
+        UIBackgroundModes:
+          - bluetooth-central
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
