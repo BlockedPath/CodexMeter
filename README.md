@@ -14,6 +14,7 @@ you work.
 ---
 
 ## What You Need
+<img width="1800" height="1100" alt="image" src="https://github.com/user-attachments/assets/92adff6d-6ee6-410f-88df-acc001405879" />
 
 **Hardware:**
 
