@@ -78,6 +78,7 @@ LOCAL_DAILY_SESSION_BUDGET = int(os.getenv("CODEXMETER_LOCAL_DAILY_SESSIONS", "1
 LOCAL_WEEKLY_SESSION_BUDGET = int(os.getenv("CODEXMETER_LOCAL_WEEKLY_SESSIONS", "60"))
 
 ADDRESS_FILE = CACHE_DIR / "ble-address"
+BLE_TRUST_FIRST = os.getenv("CODEXMETER_BLE_TRUST_FIRST", "").lower() in {"1", "true", "yes", "on"}
 OPENAI_COSTS_URL = "https://api.openai.com/v1/organization/costs"
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 CODEX_AUTH_FILE = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex"))) / "auth.json"
@@ -597,19 +598,98 @@ def load_address() -> str | None:
     return value or None
 
 
+def forget_address() -> None:
+    try:
+        ADDRESS_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def device_matches_name(device) -> bool:
+    return getattr(device, "name", None) == DEVICE_NAME
+
+
+def device_or_advertisement_matches_name(device, advertisement_data=None) -> bool:
+    return device_matches_name(device) or getattr(advertisement_data, "local_name", None) == DEVICE_NAME
+
+
+def service_collection_has(service_collection, uuid: str) -> bool:
+    if service_collection is None:
+        return False
+    get_service = getattr(service_collection, "get_service", None)
+    if callable(get_service):
+        return get_service(uuid) is not None
+    for service in service_collection:
+        if str(getattr(service, "uuid", "")).lower() == uuid.lower():
+            return True
+    return False
+
+
+def characteristic_collection_has(service_collection, uuid: str) -> bool:
+    if service_collection is None:
+        return False
+    get_characteristic = getattr(service_collection, "get_characteristic", None)
+    if callable(get_characteristic):
+        return get_characteristic(uuid) is not None
+    for service in service_collection:
+        for characteristic in getattr(service, "characteristics", []):
+            if str(getattr(characteristic, "uuid", "")).lower() == uuid.lower():
+                return True
+    return False
+
+
+async def verify_ble_device(address: str) -> bool:
+    try:
+        async with BleakClient(address) as client:
+            services = getattr(client, "services", None)
+            if services is None:
+                get_services = getattr(client, "get_services", None)
+                services = await get_services() if callable(get_services) else None
+            return service_collection_has(services, SERVICE_UUID) and characteristic_collection_has(
+                services,
+                RX_CHAR_UUID,
+            )
+    except Exception as exc:
+        log(f"BLE device verification failed for {address}: {exc}")
+        return False
+
+
+async def discover_named_devices() -> list:
+    try:
+        discovered = await BleakScanner.discover(timeout=SCAN_TIMEOUT, return_adv=True)
+    except TypeError:
+        discovered = await BleakScanner.discover(timeout=SCAN_TIMEOUT)
+    if isinstance(discovered, dict):
+        devices = []
+        for device, advertisement_data in discovered.values():
+            if device_or_advertisement_matches_name(device, advertisement_data):
+                devices.append(device)
+        return devices
+    return [device for device in discovered if device_matches_name(device)]
+
+
 async def find_device():
     cached = load_address()
     if cached:
         log(f"Trying cached BLE address {cached}")
-        return cached
+        if await verify_ble_device(cached):
+            return cached
+        log("Cached BLE address did not verify; clearing it")
+        forget_address()
 
     log(f"Scanning for '{DEVICE_NAME}'...")
-    device = await BleakScanner.find_device_by_filter(
-        lambda d, ad: d.name == DEVICE_NAME or ad.local_name == DEVICE_NAME,
-        timeout=SCAN_TIMEOUT,
-    )
-    if not device:
+    matches = await discover_named_devices()
+    if not matches:
         raise RuntimeError(f"Could not find BLE device named {DEVICE_NAME!r}")
+    if len(matches) > 1 and not BLE_TRUST_FIRST:
+        addresses = ", ".join(str(getattr(device, "address", "unknown")) for device in matches)
+        raise RuntimeError(
+            f"Found multiple BLE devices named {DEVICE_NAME!r}: {addresses}. "
+            "Clear nearby duplicates or set CODEXMETER_BLE_TRUST_FIRST=1 to pick the first match."
+        )
+    device = matches[0]
+    if not await verify_ble_device(device.address):
+        raise RuntimeError(f"BLE device {device.address} did not expose the CodexMeter service")
     save_address(device.address)
     log(f"Found {device.name or DEVICE_NAME} at {device.address}")
     return device.address
