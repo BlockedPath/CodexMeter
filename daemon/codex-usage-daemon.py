@@ -108,6 +108,8 @@ class UsageSnapshot:
     ok: bool
     pet_title: str = ""
     pet_message: str = ""
+    project: str = ""
+    completed: str = ""
 
     def payload(self) -> str:
         data = {
@@ -122,7 +124,19 @@ class UsageSnapshot:
             data["pt"] = compact_text(self.pet_title, 26)
         if self.pet_message:
             data["m"] = compact_text(self.pet_message, 42)
+        if self.project:
+            data["pr"] = compact_text(self.project, 20)
+        if self.completed:
+            data["lc"] = compact_text(self.completed, 42)
         return json.dumps(data, separators=(",", ":"))
+
+
+@dataclass
+class CodexActivity:
+    title: str = ""
+    project: str = ""
+    action: str = ""
+    completed: str = ""
 
 
 def log(message: str) -> None:
@@ -369,6 +383,16 @@ def session_title(session_id: str) -> str:
     return ""
 
 
+def project_name_from_cwd(cwd: str) -> str:
+    if not cwd:
+        return ""
+    path = Path(cwd).expanduser()
+    name = path.name
+    if name:
+        return compact_text(name, 20)
+    return compact_text(cwd, 20)
+
+
 def message_text(payload: dict) -> str:
     chunks: list[str] = []
     content = payload.get("content")
@@ -420,15 +444,28 @@ def function_call_activity(name: str, arguments: str) -> str:
     return "Using tool"
 
 
-def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> tuple[str, str]:
+def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> CodexActivity:
     path = path or latest_session_file()
     if path is None:
-        return "", ""
-    title = session_title(session_id_from_path(path)) or "Codex"
+        return CodexActivity()
+    activity = CodexActivity(title=session_title(session_id_from_path(path)) or "Codex")
     try:
         raw_lines = tail_text(path).splitlines()
     except OSError:
-        return title, ""
+        return activity
+
+    for line in raw_lines:
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if row.get("type") in {"session_meta", "turn_context"}:
+            project = project_name_from_cwd(str(payload.get("cwd") or ""))
+            if project:
+                activity.project = project
 
     now = utc_now()
     for line in reversed(raw_lines):
@@ -437,8 +474,7 @@ def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> tupl
         except json.JSONDecodeError:
             continue
         ts = parse_iso(str(row.get("timestamp", "")))
-        if ts is not None and (now - ts).total_seconds() > max_age_seconds:
-            return title, "Ready"
+        is_stale = ts is not None and (now - ts).total_seconds() > max_age_seconds
 
         payload = row.get("payload")
         if not isinstance(payload, dict):
@@ -448,33 +484,61 @@ def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> tupl
         if row_type == "response_item":
             item_type = payload.get("type")
             if item_type == "function_call":
-                return title, function_call_activity(str(payload.get("name") or ""), str(payload.get("arguments") or ""))
+                if not activity.action:
+                    activity.action = "Ready" if is_stale else function_call_activity(
+                        str(payload.get("name") or ""),
+                        str(payload.get("arguments") or ""),
+                    )
             if item_type == "function_call_output":
-                return title, "Thinking"
+                if not activity.action:
+                    activity.action = "Ready" if is_stale else "Thinking"
             if item_type == "message":
                 phase = str(payload.get("phase") or "")
                 if phase in {"final", "final_answer"}:
-                    return title, message_text(payload) or "Ready"
-                return title, "Thinking"
+                    if not activity.completed:
+                        activity.completed = message_text(payload)
+                    if not activity.action:
+                        activity.action = "Ready"
+                elif not activity.action:
+                    activity.action = "Ready" if is_stale else "Thinking"
 
         if row_type == "event_msg":
             event_type = payload.get("type")
             if event_type == "task_complete":
-                return title, task_complete_text(payload) or "Ready"
+                if not activity.completed:
+                    activity.completed = task_complete_text(payload)
+                if not activity.action:
+                    activity.action = "Ready"
             if event_type == "agent_message":
                 phase = str(payload.get("phase") or "")
                 if phase in {"final", "final_answer"}:
-                    return title, compact_text(str(payload.get("message") or ""), 42) or "Ready"
-                return title, "Thinking"
+                    if not activity.completed:
+                        activity.completed = compact_text(str(payload.get("message") or ""), 42)
+                    if not activity.action:
+                        activity.action = "Ready"
+                elif not activity.action:
+                    activity.action = "Ready" if is_stale else "Thinking"
             if event_type == "token_count":
-                return title, "Thinking"
+                if not activity.action:
+                    activity.action = "Ready" if is_stale else "Thinking"
 
-    return title, "Ready"
+        if activity.action and activity.completed:
+            break
+
+    if not activity.action:
+        activity.action = "Ready"
+    return activity
 
 
 def with_codex_activity(snapshot: UsageSnapshot) -> UsageSnapshot:
-    title, message = codex_activity()
-    return replace(snapshot, pet_title=title, pet_message=message)
+    activity = codex_activity()
+    return replace(
+        snapshot,
+        pet_title=activity.title,
+        pet_message=activity.action,
+        project=activity.project,
+        completed=activity.completed,
+    )
 
 
 def local_codex_activity_snapshot() -> UsageSnapshot:

@@ -26,7 +26,7 @@ static bool screen_canvas_ready = false;
 static Preferences preferences;
 
 static constexpr uint8_t ATOM_BRIGHTNESS = 72;
-static constexpr uint8_t SCREEN_COUNT = 4;
+static constexpr uint8_t SCREEN_COUNT = 5;
 static constexpr uint16_t ATOM_BG = 0x0000;
 static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
@@ -116,6 +116,27 @@ static const char* current_pet_title() {
         return usage.pet_title;
     }
     return "Codex";
+}
+
+static const char* current_project_name() {
+    if (usage.project[0] != '\0') {
+        return usage.project;
+    }
+    return "project";
+}
+
+static const char* current_completed_text() {
+    if (usage.completed[0] != '\0') {
+        return usage.completed;
+    }
+    return "waiting";
+}
+
+static const char* current_action_text() {
+    if (usage.pet_message[0] != '\0') {
+        return usage.pet_message;
+    }
+    return "Ready";
 }
 
 static const PetStyle& current_pet_style() {
@@ -351,11 +372,10 @@ static void draw_pet(bool force = false) {
     screen_canvas.setTextDatum(top_left);
     screen_canvas.setTextColor(ATOM_TEXT, current_pet_style().card);
     screen_canvas.setTextSize(1);
-    draw_fit_string(current_pet_title(), 9, 7, 108);
+    draw_fit_string("Codex", 9, 7, 108);
     screen_canvas.drawFastHLine(9, 20, 108, ATOM_RULE);
     screen_canvas.setTextColor(CODEX_WHITE, current_pet_style().card);
-    screen_canvas.setTextSize(1);
-    draw_fit_string(current_pet_message(), 9, 26, 108);
+    draw_fit_string(pet_messages[pet_message_idx], 9, 26, 108);
 
     int pulse = next_frame < 6 ? next_frame : 12 - next_frame;
     int bob = max(0, pulse / 3);
@@ -388,6 +408,36 @@ static void draw_pet_selector() {
     present_canvas();
 }
 
+static void draw_working() {
+    screen_canvas.fillScreen(ATOM_BG);
+    screen_canvas.setTextDatum(top_left);
+    screen_canvas.setTextSize(1);
+    screen_canvas.setTextColor(current_pet_style().accent, ATOM_BG);
+    screen_canvas.drawString("NOW WORKING", 6, 5);
+    screen_canvas.drawFastHLine(6, 18, 116, ATOM_RULE);
+
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString("project", 6, 25);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    draw_fit_string(current_project_name(), 54, 25, 68);
+
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString("task", 6, 45);
+    screen_canvas.setTextColor(CODEX_WHITE, ATOM_BG);
+    draw_fit_string(current_pet_title(), 6, 57, 116);
+
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString("action", 6, 76);
+    screen_canvas.setTextColor(current_pet_style().accent, ATOM_BG);
+    draw_fit_string(current_action_text(), 54, 76, 68);
+
+    screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
+    screen_canvas.drawString("last done", 6, 96);
+    screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
+    draw_fit_string(current_completed_text(), 6, 108, 116);
+    present_canvas();
+}
+
 static void select_next_pet() {
     active_pet = (active_pet + 1) % PET_STYLE_COUNT;
     preferences.putUChar("pet_v2", active_pet);
@@ -406,6 +456,7 @@ static void draw_screen(bool force = false) {
     if (screen == 0) draw_usage();
     else if (screen == 1) draw_ble();
     else if (screen == 3) draw_pet_selector();
+    else if (screen == 4) draw_working();
     present_canvas();
 }
 
@@ -424,6 +475,8 @@ static bool parse_json(const char* json, UsageData* out) {
     strlcpy(out->status, doc["st"] | "unknown", sizeof(out->status));
     strlcpy(out->pet_title, doc["pt"] | "", sizeof(out->pet_title));
     strlcpy(out->pet_message, doc["m"] | "", sizeof(out->pet_message));
+    strlcpy(out->project, doc["pr"] | "", sizeof(out->project));
+    strlcpy(out->completed, doc["lc"] | "", sizeof(out->completed));
     out->ok = doc["ok"] | false;
     out->valid = true;
     return true;
@@ -433,7 +486,7 @@ static void handle_payload(const char* data) {
     Serial.printf("RX: %s\n", data);
     if (parse_json(data, &usage)) {
         ble_send_ack();
-        if (screen == 0 || screen == 2) {
+        if (screen == 0 || screen == 4) {
             draw_screen(true);
         }
     } else {

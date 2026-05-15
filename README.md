@@ -4,12 +4,13 @@ A tiny AtomS3 desk display for Codex usage and connection status.
 
 Forked from https://github.com/HermannBjorgvin/Clawdmeter.
 
-CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws four button-cycled screens on the built-in display:
+CodexMeter runs on an **M5Stack AtomS3 ESP32-S3**. The firmware draws five button-cycled screens on the built-in display:
 
 - usage remaining for the current and weekly Codex windows
 - USB/BLE connection status
 - a simple local status animation with rotating work-status text
 - pet selection for toggling between the custom Codex pets on this device
+- a Now Working screen with current project, task, action, and last completed action
 
 The companion daemon runs on your computer and pushes compact JSON updates to the device over USB serial by default. BLE support still exists, but USB serial is the most reliable path while this is a small desk prototype.
 
@@ -161,15 +162,16 @@ Press the AtomS3 button to cycle screens:
 2. **Connection** - USB/BLE status and device identity
 3. **Status** - simple built-in animation with rotating status phrases
 4. **Pets** - hold the button to toggle Sukuna, Boba, Gojo, or Itachi
+5. **Now Working** - current project, Codex task, current action, and last completed action
 
-Hold the button on the Usage, Connection, or Status screens to clear BLE bonds.
+Hold the button on the Usage, Connection, Status, or Now Working screens to clear BLE bonds.
 
 ## Host Protocol
 
 The host sends one compact JSON object per line over USB serial:
 
 ```json
-{"s":45,"sr":120,"w":28,"wr":7200,"st":"120 credits","ok":true}
+{"s":45,"sr":120,"w":28,"wr":7200,"st":"120 credits","ok":true,"pr":"CodexMeter","pt":"Update docs","m":"Editing files","lc":"Added TODO"}
 ```
 
 Fields:
@@ -182,6 +184,10 @@ Fields:
 | `wr` | Weekly or secondary reset time in minutes |
 | `st` | Short status string |
 | `ok` | Whether live usage data was available |
+| `pr` | Optional current project/repo name |
+| `pt` | Optional current Codex thread title |
+| `m` | Optional current Codex action |
+| `lc` | Optional last completed action |
 
 BLE uses the same payload on the RX characteristic.
 
