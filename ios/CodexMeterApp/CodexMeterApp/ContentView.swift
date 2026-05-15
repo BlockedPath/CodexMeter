@@ -77,6 +77,10 @@ struct DashboardView: View {
                     usageSection
                 }
 
+                if !vm.serverURL.isEmpty {
+                    daemonSection
+                }
+
                 // Update info
                 if !vm.serverURL.isEmpty {
                     HStack {
@@ -160,6 +164,34 @@ struct DashboardView: View {
             .background(Color(.systemGray6))
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    var daemonSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Daemon", systemImage: "desktopcomputer")
+                    .font(.headline)
+                Spacer()
+                Text(vm.daemonSourceText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                StatusPill(title: "Fresh", value: vm.daemonFreshnessText)
+                StatusPill(title: "Uptime", value: vm.daemonUptimeText)
+            }
+
+            if !vm.daemonLastError.isEmpty {
+                Label(vm.daemonLastError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .lineLimit(3)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -263,5 +295,28 @@ struct UsageCard: View {
         let h = resetMins / 60, m = resetMins % 60
         if h < 24 { return "Resets in \(h)h \(m)m" }
         return "Resets in \(h / 24)d \(h % 24)h"
+    }
+}
+
+struct StatusPill: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

@@ -8,6 +8,11 @@ final class MeterViewModel: ObservableObject {
     @Published var lastUpdate: Date?
     @Published var isFetching = false
     @Published var errorMessage: String?
+    @Published var daemonSource: String = "starting"
+    @Published var daemonLastSuccess: String = "--"
+    @Published var daemonLastError: String = ""
+    @Published var daemonPayloadAge: Int?
+    @Published var daemonUptime: Int?
 
     // Parsed fields for display
     @Published var sessionPct: Double = 0
@@ -55,13 +60,12 @@ final class MeterViewModel: ObservableObject {
 
     func fetchUsage() async {
         guard !serverURL.isEmpty else { return }
-        let url = serverURL.hasSuffix("/usage") ? serverURL : "\(serverURL)/usage"
 
         isFetching = true
         defer { isFetching = false }
 
         do {
-            guard let requestURL = URL(string: url) else {
+            guard let requestURL = endpointURL("usage") else {
                 errorMessage = "Invalid URL"
                 return
             }
@@ -80,10 +84,48 @@ final class MeterViewModel: ObservableObject {
             errorMessage = nil
 
             parseJSON(json)
+            await fetchDaemonStatus()
             sendToBLE()
         } catch {
             errorMessage = error.localizedDescription
+            await fetchDaemonStatus()
         }
+    }
+
+    private func endpointURL(_ path: String) -> URL? {
+        var base = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.hasSuffix("/usage") {
+            base = String(base.dropLast(6))
+        } else if base.hasSuffix("/status") {
+            base = String(base.dropLast(7))
+        }
+        if base.hasSuffix("/") {
+            base.removeLast()
+        }
+        return URL(string: "\(base)/\(path)")
+    }
+
+    private func fetchDaemonStatus() async {
+        guard let requestURL = endpointURL("status") else { return }
+        do {
+            var request = URLRequest(url: requestURL)
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return }
+            parseDaemonStatus(data)
+        } catch {
+            daemonLastError = error.localizedDescription
+        }
+    }
+
+    private func parseDaemonStatus(_ data: Data) {
+        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+        daemonSource = (dict["source"] as? String) ?? "unknown"
+        daemonLastSuccess = (dict["last_success_at"] as? String) ?? "--"
+        daemonLastError = (dict["last_error"] as? String) ?? ""
+        daemonPayloadAge = (dict["payload_age_seconds"] as? Int) ?? (dict["payload_age_seconds"] as? Double).map(Int.init)
+        daemonUptime = (dict["uptime_seconds"] as? Int) ?? (dict["uptime_seconds"] as? Double).map(Int.init)
     }
 
     private func parseJSON(_ json: String) {
@@ -118,5 +160,29 @@ final class MeterViewModel: ObservableObject {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    var daemonSourceText: String {
+        switch daemonSource {
+        case "codex_oauth": return "Codex OAuth"
+        case "openai_costs": return "OpenAI costs"
+        case "local_fallback": return "Local fallback"
+        case "starting": return "Starting"
+        default: return daemonSource
+        }
+    }
+
+    var daemonFreshnessText: String {
+        guard let daemonPayloadAge else { return "--" }
+        if daemonPayloadAge < 60 { return "\(daemonPayloadAge)s old" }
+        if daemonPayloadAge < 3600 { return "\(daemonPayloadAge / 60)m old" }
+        return "\(daemonPayloadAge / 3600)h old"
+    }
+
+    var daemonUptimeText: String {
+        guard let daemonUptime else { return "--" }
+        if daemonUptime < 60 { return "\(daemonUptime)s" }
+        if daemonUptime < 3600 { return "\(daemonUptime / 60)m" }
+        return "\(daemonUptime / 3600)h"
     }
 }
