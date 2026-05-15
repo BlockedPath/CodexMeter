@@ -13,11 +13,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import glob
+import http.server
 import json
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -695,7 +697,7 @@ async def find_device():
     return device.address
 
 
-async def run_once(address: str) -> None:
+async def run_once(address: str, shared: SharedSnapshot) -> None:
     async with BleakClient(address) as client:
         log("Connected")
         last_poll = 0.0
@@ -722,6 +724,7 @@ async def run_once(address: str) -> None:
                 log(f"Sending: {payload}")
                 await client.write_gatt_char(RX_CHAR_UUID, payload.encode("utf-8"), response=False)
                 last_payload = payload
+                shared.set_payload(payload)
             await asyncio.sleep(ACTIVITY_POLL_INTERVAL)
 
 
@@ -787,10 +790,12 @@ def send_serial_payload(port: str, payload: str) -> None:
             ser.close()
 
 
-async def run_serial_loop(port: str, once: bool) -> int:
+async def run_serial_loop(port: str, once: bool, shared: SharedSnapshot) -> int:
     if once:
         snapshot = with_codex_activity(usage_snapshot())
-        send_serial_payload(port, snapshot.payload())
+        payload = snapshot.payload()
+        send_serial_payload(port, payload)
+        shared.set_payload(payload)
         return 0
 
     ser = open_serial_connection(port)
@@ -808,6 +813,7 @@ async def run_serial_loop(port: str, once: bool) -> int:
             if payload != last_payload:
                 write_serial_payload(ser, payload)
                 last_payload = payload
+                shared.set_payload(payload)
             await asyncio.sleep(ACTIVITY_POLL_INTERVAL)
     finally:
         try:
@@ -817,52 +823,141 @@ async def run_serial_loop(port: str, once: bool) -> int:
             ser.close()
 
 
+# ── Shared snapshot holder for HTTP endpoint ────────────────────────────────
+
+class SharedSnapshot:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._payload = ""
+
+    def set_payload(self, payload: str) -> None:
+        with self._lock:
+            self._payload = payload
+
+    def get_payload(self) -> str:
+        with self._lock:
+            return self._payload
+
+
+class CodexMeterHTTPHandler(http.server.BaseHTTPRequestHandler):
+    shared: SharedSnapshot | None = None
+
+    def do_GET(self) -> None:
+        if self.path == "/usage":
+            payload = self.shared.get_payload() if self.shared else "{}"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(payload.encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format: str, *args) -> None:
+        pass  # suppress HTTP access logs
+
+
+def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
+    CodexMeterHTTPHandler.shared = shared
+    server = http.server.HTTPServer(("0.0.0.0", port), CodexMeterHTTPHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    log(f"HTTP server listening on 0.0.0.0:{port}")
+    return t
+
+
+async def run_http_loop(shared: SharedSnapshot) -> None:
+    """Main loop: refresh usage and update shared snapshot for HTTP consumers."""
+    while True:
+        try:
+            snapshot = with_codex_activity(usage_snapshot())
+            shared.set_payload(snapshot.payload())
+        except Exception as exc:
+            log(f"Usage refresh error: {exc}")
+        await asyncio.sleep(POLL_INTERVAL)
+
+
+async def transport_serial_task(port: str, shared: SharedSnapshot) -> None:
+    """Background task: push usage to ESP32 over serial."""
+    try:
+        await run_serial_loop(port, False, shared)
+    except Exception as exc:
+        log(f"Serial transport error: {exc}")
+        # Keep running — HTTP still works
+        while True:
+            await asyncio.sleep(3600)
+
+
+async def transport_ble_task(shared: SharedSnapshot) -> None:
+    """Background task: push usage to ESP32 over BLE."""
+    if BleakClient is None or BleakScanner is None:
+        log("BLE unavailable: pip install -r requirements.txt")
+        while True:
+            await asyncio.sleep(3600)
+
+    backoff = 1
+    while True:
+        try:
+            address = await find_device()
+            await run_once(address, shared)
+            backoff = 1
+        except Exception as exc:
+            log(f"BLE disconnected: {exc}")
+            if ADDRESS_FILE.exists():
+                ADDRESS_FILE.unlink()
+            log(f"Retrying in {backoff}s")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description="Send OpenAI/Codex usage to CodexMeter.")
     parser.add_argument("--once", action="store_true", help="send one payload then exit")
     parser.add_argument("--print", action="store_true", help="print the current payload and exit")
     parser.add_argument(
         "--transport",
-        choices=("ble", "serial"),
+        choices=("ble", "serial", "none"),
         default=os.getenv("CODEXMETER_TRANSPORT", "serial"),
-        help="host link to use (default: serial)",
+        help="host link to use (default: serial, 'none' for HTTP-only)",
     )
     parser.add_argument("--serial-port", default=os.getenv("CODEXMETER_SERIAL_PORT"), help="serial port for USB mode")
+    parser.add_argument(
+        "--http-port",
+        type=int,
+        default=int(os.getenv("CODEXMETER_HTTP_PORT", "9595")),
+        help="serve usage over HTTP on this port (default: 9595)",
+    )
     args = parser.parse_args()
 
     if args.print:
         print(with_codex_activity(usage_snapshot()).payload())
         return 0
 
+    shared = SharedSnapshot()
+    start_http_server(args.http_port, shared)
+
+    # Start transport in background (non-fatal — HTTP stays up regardless)
     if args.transport == "serial":
-        try:
-            return await run_serial_loop(find_serial_port(args.serial_port), args.once)
-        except Exception as exc:
-            log(f"Serial error: {exc}")
-            return 2
+        asyncio.create_task(transport_serial_task(find_serial_port(args.serial_port), shared))
+    elif args.transport == "ble":
+        asyncio.create_task(transport_ble_task(shared))
 
-    if BleakClient is None or BleakScanner is None:
-        print("Missing BLE dependency: pip install -r requirements.txt", file=sys.stderr)
-        return 2
+    # One-shot mode: fetch once, write, exit
+    if args.once:
+        snapshot = with_codex_activity(usage_snapshot())
+        payload = snapshot.payload()
+        shared.set_payload(payload)
+        log(f"Payload: {payload}")
+        await asyncio.sleep(1)  # give HTTP server a moment
+        return 0
 
-    backoff = 1
-    while True:
-        try:
-            address = await find_device()
-            if args.once:
-                await send_ble_once(address)
-                return 0
-            await run_once(address)
-            backoff = 1
-        except KeyboardInterrupt:
-            return 0
-        except Exception as exc:
-            log(f"Disconnected/error: {exc}")
-            if ADDRESS_FILE.exists():
-                ADDRESS_FILE.unlink()
-            log(f"Retrying in {backoff}s")
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+    # Main loop: keep refreshing usage for HTTP consumers
+    try:
+        await run_http_loop(shared)
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == "__main__":
