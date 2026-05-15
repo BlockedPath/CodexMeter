@@ -3,6 +3,8 @@
 #include <M5Unified.h>
 #include <Preferences.h>
 #include "ble.h"
+#include "color_utils.h"
+#include "text_utils.h"
 #include "data.h"
 #include "codex_icon.h"
 #include "boba_sprite.h"
@@ -32,13 +34,7 @@ static constexpr uint16_t ATOM_TEXT = 0xD69A;
 static constexpr uint16_t ATOM_DIM = 0x8C71;
 static constexpr uint16_t ATOM_RULE = 0x2965;
 static constexpr uint16_t ATOM_CARD = 0x0841;
-static constexpr uint16_t CODEX_BLUE = 0x3A7F;
-static constexpr uint16_t CODEX_BLUE_DARK = 0x181F;
-static constexpr uint16_t CODEX_LILAC = 0xA57F;
 static constexpr uint16_t CODEX_WHITE = 0xF7BE;
-static constexpr uint16_t PET_SKIN = 0xF5B3;
-static constexpr uint16_t PET_HAIR = 0xD34F;
-static constexpr uint16_t PET_COAT = 0x18A3;
 static constexpr uint16_t PET_ACCENT = 0xF6C7;
 static constexpr uint16_t PET_MESSAGE_MS = 4000;
 static constexpr uint16_t PET_SPRITE_W = 52;
@@ -59,11 +55,16 @@ struct PetStyle {
 
 static const PetStyle pet_styles[] = {
     {"Sukuna", PET_ACCENT, ATOM_CARD, PET_SUKUNA_STATE_COUNT, pet_sukuna_state_offset, pet_sukuna_state_count, pet_sukuna_frame_ms, pet_sukuna_rgb565, pet_sukuna_alpha},
-    {"Boba", 0x8EFD, 0x1008, PET_BOBA_STATE_COUNT, pet_boba_state_offset, pet_boba_state_count, pet_boba_frame_ms, pet_boba_rgb565, pet_boba_alpha},
-    {"Gojo", 0xC6FF, 0x0844, PET_GOJO_STATE_COUNT, pet_gojo_state_offset, pet_gojo_state_count, pet_gojo_frame_ms, pet_gojo_rgb565, pet_gojo_alpha},
-    {"Itachi", 0xE8E4, 0x1804, PET_ITACHI_STATE_COUNT, pet_itachi_state_offset, pet_itachi_state_count, pet_itachi_frame_ms, pet_itachi_rgb565, pet_itachi_alpha},
+    {"Boba",  0x8EFD, 0x1008, PET_BOBA_STATE_COUNT, pet_boba_state_offset, pet_boba_state_count, pet_boba_frame_ms, pet_boba_rgb565, pet_boba_alpha},
+    {"Gojo",  0xC6FF, 0x0844, PET_GOJO_STATE_COUNT, pet_gojo_state_offset, pet_gojo_state_count, pet_gojo_frame_ms, pet_gojo_rgb565, pet_gojo_alpha},
+    {"Itachi",0xE8E4, 0x1804, PET_ITACHI_STATE_COUNT, pet_itachi_state_offset, pet_itachi_state_count, pet_itachi_frame_ms, pet_itachi_rgb565, pet_itachi_alpha},
 };
 static constexpr uint8_t PET_STYLE_COUNT = sizeof(pet_styles) / sizeof(pet_styles[0]);
+
+static_assert(PET_SPRITE_W == PET_BOBA_W && PET_SPRITE_H == PET_BOBA_H, "BOBA sprite dimensions mismatch");
+static_assert(PET_SPRITE_W == PET_GOJO_W && PET_SPRITE_H == PET_GOJO_H, "GOJO sprite dimensions mismatch");
+static_assert(PET_SPRITE_W == PET_ITACHI_W && PET_SPRITE_H == PET_ITACHI_H, "ITACHI sprite dimensions mismatch");
+static_assert(PET_SPRITE_W == PET_SUKUNA_W && PET_SPRITE_H == PET_SUKUNA_H, "SUKUNA sprite dimensions mismatch");
 
 static const char* const pet_messages[] = {
     "Accomplishing", "Elucidating", "Perusing",
@@ -203,30 +204,6 @@ static void draw_fit_string(const char* text, int x, int y, int max_w) {
     screen_canvas.drawString(buf, x, y);
 }
 
-static uint8_t rgb565_r(uint16_t color) {
-    return ((color >> 11) & 0x1F) * 255 / 31;
-}
-
-static uint8_t rgb565_g(uint16_t color) {
-    return ((color >> 5) & 0x3F) * 255 / 63;
-}
-
-static uint8_t rgb565_b(uint16_t color) {
-    return (color & 0x1F) * 255 / 31;
-}
-
-static uint16_t make_rgb565(uint8_t r, uint8_t g, uint8_t b) {
-    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-}
-
-static uint16_t blend_rgb565(uint16_t base, uint16_t tint, uint8_t amount) {
-    uint8_t inverse = 255 - amount;
-    uint8_t r = (rgb565_r(base) * inverse + rgb565_r(tint) * amount) / 255;
-    uint8_t g = (rgb565_g(base) * inverse + rgb565_g(tint) * amount) / 255;
-    uint8_t b = (rgb565_b(base) * inverse + rgb565_b(tint) * amount) / 255;
-    return make_rgb565(r, g, b);
-}
-
 static uint16_t current_pet_frame_index(const PetStyle& pet, uint8_t state, uint8_t frame) {
     state %= pet.state_count;
     uint8_t count = pet.state_count_frames[state];
@@ -251,21 +228,13 @@ static void draw_current_pet_sprite(int x, int y, uint8_t state, uint8_t frame) 
     }
 }
 
-static void fmt_reset(int mins, char* buf, size_t len) {
-    if (mins < 0) {
-        snprintf(buf, len, "--");
-    } else if (mins < 60) {
-        snprintf(buf, len, "%dm", mins);
-    } else if (mins < 1440) {
-        snprintf(buf, len, "%dh%02d", mins / 60, mins % 60);
-    } else {
-        snprintf(buf, len, "%dd%02dh", mins / 1440, (mins % 1440) / 60);
-    }
-}
-
 static void draw_usage() {
-    screen_canvas.fillScreen(ATOM_BG);
-    draw_header();
+    if (screen_canvas_ready) {
+        screen_canvas.fillScreen(ATOM_BG);
+        draw_header();
+    } else {
+        M5.Display.fillScreen(ATOM_BG);
+    }
 
     if (!usage.valid) {
         screen_canvas.setTextDatum(middle_center);
@@ -284,17 +253,22 @@ static void draw_usage() {
     screen_canvas.drawString(has_percent ? "5H LEFT" : "TODAY", 6, 38);
     screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
     screen_canvas.setTextSize(2);
-    screen_canvas.drawString(has_percent ? String(s) + "%" : "--", 6, 50);
+    char pct_str[8];
+    snprintf(pct_str, sizeof(pct_str), "%d%%", s);
+    screen_canvas.drawString(has_percent ? pct_str : "--", 6, 50);
     draw_bar(6, 73, 116, 11, has_percent ? s : 0, has_percent ? remaining_color(usage.session_pct) : 0x5AEB);
     fmt_reset(usage.session_reset_mins, reset, sizeof(reset));
     screen_canvas.setTextSize(1);
     screen_canvas.setTextColor(ATOM_DIM, ATOM_BG);
-    screen_canvas.drawString(has_percent ? String("reset ") + reset : usage.status, 6, 87);
+    char reset_label[24];
+    snprintf(reset_label, sizeof(reset_label), "reset %s", reset);
+    screen_canvas.drawString(has_percent ? reset_label : usage.status, 6, 87);
 
     screen_canvas.drawString(has_percent ? "WK LEFT" : "WEEK", 6, 100);
     screen_canvas.setTextColor(ATOM_TEXT, ATOM_BG);
     screen_canvas.setTextSize(2);
-    screen_canvas.drawString(has_percent ? String(w) + "%" : "--", 6, 111);
+    snprintf(pct_str, sizeof(pct_str), "%d%%", w);
+    screen_canvas.drawString(has_percent ? pct_str : "--", 6, 111);
     draw_bar(62, 116, 60, 9, has_percent ? w : 0, has_percent ? remaining_color(usage.weekly_pct) : 0x5AEB);
     if (!has_percent) {
         screen_canvas.setTextSize(1);
@@ -509,6 +483,7 @@ static void poll_serial_json() {
         if (serial_len < sizeof(serial_buf) - 1) {
             serial_buf[serial_len++] = c;
         } else {
+            Serial.println("serial JSON overflow, discarding buffer");
             serial_len = 0;
         }
     }

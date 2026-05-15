@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import glob
 import http.server
+import inspect
 import json
 import os
 import re
@@ -30,13 +31,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
-    from bleak import BleakClient, BleakScanner
+    from bleak import BleakClient, BleakScanner  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - user-facing dependency hint
     BleakClient = None
     BleakScanner = None
 
 try:
-    import serial
+    import serial  # type: ignore[import-untyped]
 except ImportError:  # pragma: no cover - user-facing dependency hint
     serial = None
 
@@ -293,6 +294,8 @@ def codex_oauth_usage_snapshot() -> UsageSnapshot:
     credits = data.get("credits") if isinstance(data, dict) else {}
     balance = credits.get("balance") if isinstance(credits, dict) else None
     try:
+        if balance is None:
+            raise TypeError("missing credit balance")
         credits_remaining = float(balance)
         status = f"{credits_remaining:.0f} credits"
     except (TypeError, ValueError):
@@ -641,12 +644,16 @@ def characteristic_collection_has(service_collection, uuid: str) -> bool:
 
 
 async def verify_ble_device(address: str) -> bool:
+    if BleakClient is None:
+        raise RuntimeError("Missing dependency: pip install -r requirements.txt")
     try:
         async with BleakClient(address) as client:
             services = getattr(client, "services", None)
             if services is None:
                 get_services = getattr(client, "get_services", None)
-                services = await get_services() if callable(get_services) else None
+                if callable(get_services):
+                    service_result = get_services()
+                    services = await service_result if inspect.isawaitable(service_result) else service_result
             return service_collection_has(services, SERVICE_UUID) and characteristic_collection_has(
                 services,
                 RX_CHAR_UUID,
@@ -657,6 +664,8 @@ async def verify_ble_device(address: str) -> bool:
 
 
 async def discover_named_devices() -> list:
+    if BleakScanner is None:
+        raise RuntimeError("Missing dependency: pip install -r requirements.txt")
     try:
         discovered = await BleakScanner.discover(timeout=SCAN_TIMEOUT, return_adv=True)
     except TypeError:
@@ -698,6 +707,8 @@ async def find_device():
 
 
 async def run_once(address: str, shared: SharedSnapshot) -> None:
+    if BleakClient is None:
+        raise RuntimeError("Missing dependency: pip install -r requirements.txt")
     async with BleakClient(address) as client:
         log("Connected")
         last_poll = 0.0
@@ -729,6 +740,8 @@ async def run_once(address: str, shared: SharedSnapshot) -> None:
 
 
 async def send_ble_once(address: str) -> None:
+    if BleakClient is None:
+        raise RuntimeError("Missing dependency: pip install -r requirements.txt")
     snapshot = with_codex_activity(usage_snapshot())
     payload = snapshot.payload()
     async with BleakClient(address) as client:
@@ -767,8 +780,8 @@ def open_serial_connection(port: str):
 
 
 def write_serial_payload(ser, payload: str) -> None:
-    ser.setDTR(False)
-    ser.setRTS(False)
+    ser.dtr = False
+    ser.rts = False
     ser.write((payload + "\n").encode("utf-8"))
     ser.flush()
     log(f"Sent over serial: {payload}")
@@ -784,8 +797,8 @@ def send_serial_payload(port: str, payload: str) -> None:
         time.sleep(1.0)
     finally:
         try:
-            ser.setDTR(False)
-            ser.setRTS(False)
+            ser.dtr = False
+            ser.rts = False
         finally:
             ser.close()
 
@@ -817,8 +830,8 @@ async def run_serial_loop(port: str, once: bool, shared: SharedSnapshot) -> int:
             await asyncio.sleep(ACTIVITY_POLL_INTERVAL)
     finally:
         try:
-            ser.setDTR(False)
-            ser.setRTS(False)
+            ser.dtr = False
+            ser.rts = False
         finally:
             ser.close()
 
@@ -958,6 +971,7 @@ async def main() -> int:
         await run_http_loop(shared)
     except KeyboardInterrupt:
         return 0
+    return 0
 
 
 if __name__ == "__main__":

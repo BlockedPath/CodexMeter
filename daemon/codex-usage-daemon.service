@@ -5,7 +5,7 @@ After=bluetooth.target
 
 [Service]
 Type=simple
-ExecStart=DAEMON_PATH
+ExecStart=/usr/bin/env python3 DAEMON_PATH --transport serial
 Restart=on-failure
 RestartSec=5
 

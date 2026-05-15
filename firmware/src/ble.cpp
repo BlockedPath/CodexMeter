@@ -85,15 +85,30 @@ void ble_init(void) {
     }
 
     server = NimBLEDevice::createServer();
+    if (!server) {
+        Serial.println("BLE: createServer failed");
+        state = BLE_STATE_INIT;
+        return;
+    }
     static ServerCallbacks serverCb;
     server->setCallbacks(&serverCb);
 
     NimBLEService* svc = server->createService(SERVICE_UUID);
+    if (!svc) {
+        Serial.println("BLE: createService failed");
+        state = BLE_STATE_INIT;
+        return;
+    }
 
     rx_char = svc->createCharacteristic(
         RX_CHAR_UUID,
         NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
     );
+    if (!rx_char) {
+        Serial.println("BLE: createCharacteristic RX failed");
+        state = BLE_STATE_INIT;
+        return;
+    }
     static RxCallbacks rxCb;
     rx_char->setCallbacks(&rxCb);
 
@@ -176,10 +191,4 @@ void ble_request_refresh(void) {
     }
 }
 
-void ble_keyboard_press(uint8_t key, uint8_t modifier) {
-    (void)key;
-    (void)modifier;
-}
 
-void ble_keyboard_release(void) {
-}

@@ -14,8 +14,8 @@ echo ""
 cd "$SCRIPT_DIR/firmware"
 if [ -x "$HOME/.platformio/penv/bin/pio" ]; then
   PIO="$HOME/.platformio/penv/bin/pio"
-elif [ -x "$SCRIPT_DIR/.venv/bin/pio" ]; then
-  PIO="$SCRIPT_DIR/.venv/bin/pio"
+elif [ -x "$SCRIPT_DIR/.venv/bin/platformio" ]; then
+  PIO="$SCRIPT_DIR/.venv/bin/platformio"
 elif command -v pio >/dev/null; then
   PIO="$(command -v pio)"
 else
