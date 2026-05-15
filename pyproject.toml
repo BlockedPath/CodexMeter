@@ -1,0 +1,9 @@
+[project]
+name = "codexmeter"
+version = "0.1.0"
+description = "CodexMeter ESP32-S3 desk display daemon"
+requires-python = ">=3.10"
+dependencies = [
+    "bleak",
+    "httpx",
+]
