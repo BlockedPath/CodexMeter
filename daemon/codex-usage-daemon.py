@@ -151,6 +151,10 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def iso_now() -> str:
+    return utc_now().isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
 def next_local_midnight_minutes() -> int:
     now = datetime.now().astimezone()
     tomorrow = (now + timedelta(days=1)).date()
@@ -591,6 +595,18 @@ def usage_snapshot() -> UsageSnapshot:
         return local_codex_activity_snapshot()
 
 
+def usage_snapshot_with_source() -> tuple[UsageSnapshot, str]:
+    try:
+        return codex_oauth_usage_snapshot(), "codex_oauth"
+    except Exception as exc:
+        log(f"Codex OAuth usage unavailable: {exc}")
+    try:
+        return openai_usage_snapshot(), "openai_costs"
+    except Exception as exc:
+        log(f"OpenAI usage unavailable, using local Codex activity: {exc}")
+        return local_codex_activity_snapshot(), "local_fallback"
+
+
 def save_address(address: str) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ADDRESS_FILE.write_text(address + "\n")
@@ -842,22 +858,62 @@ class SharedSnapshot:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._payload = ""
+        self._started_at = time.time()
+        self._last_success_at: str | None = None
+        self._last_error_at: str | None = None
+        self._last_error = ""
+        self._source = "starting"
+        self._payload_updated_at: str | None = None
 
-    def set_payload(self, payload: str) -> None:
+    def set_payload(self, payload: str, source: str = "unknown") -> None:
         with self._lock:
             self._payload = payload
+            self._source = source
+            self._last_success_at = iso_now()
+            self._payload_updated_at = self._last_success_at
+            self._last_error = ""
+
+    def set_error(self, error: Exception | str) -> None:
+        with self._lock:
+            self._last_error_at = iso_now()
+            self._last_error = compact_text(str(error), 120)
 
     def get_payload(self) -> str:
         with self._lock:
             return self._payload
+
+    def get_status(self) -> str:
+        with self._lock:
+            status = {
+                "ok": bool(self._payload) and not self._last_error,
+                "source": self._source,
+                "last_success_at": self._last_success_at,
+                "last_error_at": self._last_error_at,
+                "last_error": self._last_error,
+                "payload_updated_at": self._payload_updated_at,
+                "payload_age_seconds": round(time.time() - self._payload_timestamp())
+                if self._payload_updated_at
+                else None,
+                "uptime_seconds": round(time.time() - self._started_at),
+            }
+        return json.dumps(status, separators=(",", ":"))
+
+    def _payload_timestamp(self) -> float:
+        if not self._payload_updated_at:
+            return time.time()
+        parsed = parse_iso(self._payload_updated_at)
+        return parsed.timestamp() if parsed else time.time()
 
 
 class CodexMeterHTTPHandler(http.server.BaseHTTPRequestHandler):
     shared: SharedSnapshot | None = None
 
     def do_GET(self) -> None:
-        if self.path == "/usage":
-            payload = self.shared.get_payload() if self.shared else "{}"
+        path = urllib.parse.urlparse(self.path).path
+        if path in {"/usage", "/status"}:
+            payload = "{}"
+            if self.shared:
+                payload = self.shared.get_payload() if path == "/usage" else self.shared.get_status()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -885,10 +941,12 @@ async def run_http_loop(shared: SharedSnapshot) -> None:
     """Main loop: refresh usage and update shared snapshot for HTTP consumers."""
     while True:
         try:
-            snapshot = with_codex_activity(usage_snapshot())
-            shared.set_payload(snapshot.payload())
+            snapshot, source = usage_snapshot_with_source()
+            snapshot = with_codex_activity(snapshot)
+            shared.set_payload(snapshot.payload(), source)
         except Exception as exc:
             log(f"Usage refresh error: {exc}")
+            shared.set_error(exc)
         await asyncio.sleep(POLL_INTERVAL)
 
 
@@ -959,9 +1017,10 @@ async def main() -> int:
 
     # One-shot mode: fetch once, write, exit
     if args.once:
-        snapshot = with_codex_activity(usage_snapshot())
+        snapshot, source = usage_snapshot_with_source()
+        snapshot = with_codex_activity(snapshot)
         payload = snapshot.payload()
-        shared.set_payload(payload)
+        shared.set_payload(payload, source)
         log(f"Payload: {payload}")
         await asyncio.sleep(1)  # give HTTP server a moment
         return 0
