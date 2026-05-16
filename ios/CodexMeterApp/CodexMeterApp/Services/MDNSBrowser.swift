@@ -3,8 +3,8 @@ import Combine
 import Darwin
 
 /// MDNSBrowser discovers HTTP services on the local network and publishes resolved URLs.
-final class MDNSBrowser: NSObject {
-    static let shared = MDNSBrowser()
+final class MDNSServiceBrowser: NSObject {
+    static let shared = MDNSServiceBrowser()
 
     /// Publishes (url, name) for each discovered service.
     let discoveryPublisher = PassthroughSubject<(String, String), Never>()
@@ -80,7 +80,7 @@ final class MDNSBrowser: NSObject {
     }
 }
 
-extension MDNSBrowser: NetServiceBrowserDelegate {
+extension MDNSServiceBrowser: NetServiceBrowserDelegate {
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         DispatchQueue.main.async {
             if !self.servicesResolving.contains(service) {
@@ -109,7 +109,7 @@ extension MDNSBrowser: NetServiceBrowserDelegate {
     }
 }
 
-extension MDNSBrowser: NetServiceDelegate {
+extension MDNSServiceBrowser: NetServiceDelegate {
     func netServiceDidResolveAddress(_ sender: NetService) {
         DispatchQueue.main.async {
             guard self.servicesResolving.contains(sender) else { self.cleanup(service: sender); return }

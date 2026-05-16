@@ -39,8 +39,8 @@ final class MeterViewModel: ObservableObject {
         ble.onRefreshRequested = { [weak self] in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
-        // Subscribe to MDNSBrowser discoveries
-        mdnsCancellable = MDNSBrowser.shared.discoveryPublisher
+        // Subscribe to MDNSServiceBrowser discoveries
+        mdnsCancellable = MDNSServiceBrowser.shared.discoveryPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] (url: String, _name: String) in
                 guard let self else { return }
@@ -56,7 +56,7 @@ final class MeterViewModel: ObservableObject {
     func start() {
         // If no server configured, start mDNS discovery to auto-find the daemon.
         if serverURL.isEmpty {
-            MDNSBrowser.shared.startBrowsing()
+            MDNSServiceBrowser.shared.startBrowsing()
         }
         guard !serverURL.isEmpty else { return }
         Task { await fetchUsage() }
@@ -75,7 +75,7 @@ final class MeterViewModel: ObservableObject {
         fetchTimer?.invalidate()
         bleTimer?.invalidate()
         ble.stop()
-        MDNSBrowser.shared.stopBrowsing()
+        MDNSServiceBrowser.shared.stopBrowsing()
         mdnsCancellable?.cancel()
         mdnsCancellable = nil
     }
