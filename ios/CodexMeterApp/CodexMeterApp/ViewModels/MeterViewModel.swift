@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import WidgetKit
 
 /// App-wide state — completely OAuth-free. Just fetches from the Mac daemon.
 @MainActor
@@ -118,6 +119,16 @@ final class MeterViewModel: ObservableObject {
 
             let json = String(data: data, encoding: .utf8) ?? "{}"
             usageJSON = json
+            // Persist latest usage JSON and server URL to the shared App Group
+            if let shared = UserDefaults(suiteName: "group.com.codexmeter") {
+                shared.set(json, forKey: "last_usage_json")
+                shared.set(self.serverURL, forKey: "server_url")
+                shared.synchronize()
+            }
+            // Ask the system to reload widget timelines — non-blocking request
+            #if canImport(WidgetKit)
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
             lastUpdate = Date()
             errorMessage = nil
 
