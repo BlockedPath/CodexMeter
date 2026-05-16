@@ -36,9 +36,20 @@ final class MeterViewModel: ObservableObject {
         ble.onRefreshRequested = { [weak self] in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
+        NotificationCenter.default.addObserver(forName: .didDiscoverDaemon, object: nil, queue: .main) { [weak self] note in
+            guard let self, let info = note.userInfo, let url = info["url"] as? String else { return }
+            // If the user hasn't configured a server, auto-fill with discovered URL
+            if self.serverURL.isEmpty {
+                self.serverURL = url
+            }
+        }
     }
 
     func start() {
+        // If no server configured, start mDNS discovery to auto-find the daemon.
+        if serverURL.isEmpty {
+            MDNSBrowser.shared.startBrowsing()
+        }
         guard !serverURL.isEmpty else { return }
         Task { await fetchUsage() }
 
@@ -56,6 +67,7 @@ final class MeterViewModel: ObservableObject {
         fetchTimer?.invalidate()
         bleTimer?.invalidate()
         ble.stop()
+        MDNSBrowser.shared.stopBrowsing()
     }
 
     func fetchUsage() async {
