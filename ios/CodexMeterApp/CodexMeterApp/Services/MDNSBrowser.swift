@@ -80,6 +80,49 @@ final class MDNSServiceBrowser: NSObject {
     }
 }
 
+// MARK: - Async/Await helpers
+
+extension MDNSServiceBrowser {
+    /// Returns an AsyncStream of discovered (url, name) pairs.
+    func discoveriesAsync() -> AsyncStream<(String, String)> {
+        AsyncStream { continuation in
+            let cancellable = discoveryPublisher.sink { pair in
+                continuation.yield(pair)
+            }
+            continuation.onTermination = { _ in
+                cancellable.cancel()
+            }
+            // start browsing when stream is created
+            self.startBrowsing()
+        }
+    }
+
+    /// Convenience: await the first discovery up to `timeout` seconds.
+    /// Returns (url, name) or nil on timeout.
+    func firstDiscovery(timeout: TimeInterval = 5.0) async -> (String, String)? {
+        await withCheckedContinuation { (cont: CheckedContinuation<(String, String)?, Never>) in
+            var resumed = false
+            var cancellable: AnyCancellable? = nil
+            cancellable = discoveryPublisher.sink { pair in
+                if !resumed {
+                    resumed = true
+                    cancellable?.cancel()
+                    cont.resume(returning: pair)
+                }
+            }
+            // Timeout handler
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                if !resumed {
+                    resumed = true
+                    cancellable?.cancel()
+                    cont.resume(returning: nil)
+                }
+            }
+            self.startBrowsing()
+        }
+    }
+}
+
 extension MDNSServiceBrowser: NetServiceBrowserDelegate {
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         DispatchQueue.main.async {
