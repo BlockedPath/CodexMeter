@@ -18,15 +18,15 @@ Run the daemon with HTTP enabled and serial transport (or `--transport none` to 
 Expect:
 
 - Console logs showing "HTTP server listening on 0.0.0.0:9595"
-- If zeroconf is installed, a log line "Advertised mDNS service codexmeter at <ip>:9595"
+- If zeroconf is installed, a log line "Advertised mDNS service codexmeter at `ip:9595`"
 - If serial transport finds the device, logs like "Sent over serial: { ... }"
 
 1) Verify HTTP endpoints locally
 
 From the same machine (or another on the same LAN) test the endpoints:
 
-curl <http://localhost:9595/usage>
-curl <http://localhost:9595/status>
+curl http://localhost:9595/usage
+curl http://localhost:9595/status
 
 Both should return JSON (usage and status objects). `Access-Control-Allow-Origin: *` is served so a browser can fetch from a different origin during development.
 
