@@ -112,21 +112,23 @@ struct AtomWidgetStyleView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image("CodexIcon")
                     .resizable()
                     .interpolation(.none)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 22, height: 22)
                 
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text("Codex")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(atomText)
+                        .fixedSize(horizontal: true, vertical: false)
                     Text("usage")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(atomDim)
+                        .lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(.bottom, 6)
 

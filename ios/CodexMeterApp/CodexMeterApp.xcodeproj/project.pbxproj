@@ -11,6 +11,7 @@
 		060043ACA0B43292C5B5FA32 /* CodexMeterAppWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 413F794033A5A34330A8B4DA /* CodexMeterAppWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		0E45F6D99C87E4A19507BE61 /* MeterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0040FEB18C46FF8FA88AF2 /* MeterViewModel.swift */; };
 		11088ACD1FC0D3C80983FAA4 /* BLEManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8180B6886C50FA4DEA8992D /* BLEManager.swift */; };
+		74A52CFFC0507E1B493AE01A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6E2BB9DD56DD774EC8E7034C /* Assets.xcassets */; };
 		74ACD947130193A7D90283ED /* UsageWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E664385FA963DE22DD0B46BC /* UsageWidget.swift */; };
 		A5237C0A03A2D901589A44EB /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE995ECA438F57D71DA72F0F /* ContentView.swift */; };
 		A7C10B8087861DE75EECF39D /* MDNSBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F0BC3573F66A4836E448C92 /* MDNSBrowser.swift */; };
@@ -52,6 +53,7 @@
 		01A85EEA0A75B3D031413E90 /* CodexMeterApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodexMeterApp.entitlements; sourceTree = "<group>"; };
 		272BDB845C5D721F8B2329B5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		413F794033A5A34330A8B4DA /* CodexMeterAppWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodexMeterAppWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		6E2BB9DD56DD774EC8E7034C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6F0BC3573F66A4836E448C92 /* MDNSBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MDNSBrowser.swift; sourceTree = "<group>"; };
 		744BA474583F58F78D03244B /* CodexMeterAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CodexMeterAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		79F45A0EE1F102187D9268AB /* MeterDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterDiscoveryTests.swift; sourceTree = "<group>"; };
@@ -69,6 +71,7 @@
 		0E3B96B7D46BCEBEA0D75600 /* CodexMeterAppWidget */ = {
 			isa = PBXGroup;
 			children = (
+				6E2BB9DD56DD774EC8E7034C /* Assets.xcassets */,
 				B40854E30881C891D1F40B3A /* CodexMeterAppWidget.entitlements */,
 				272BDB845C5D721F8B2329B5 /* Info.plist */,
 				E664385FA963DE22DD0B46BC /* UsageWidget.swift */,
@@ -179,6 +182,7 @@
 			buildConfigurationList = 3C2BFAE514973B9C1F2DE5BF /* Build configuration list for PBXNativeTarget "CodexMeterAppWidget" */;
 			buildPhases = (
 				DF2F2EC4810B77FC2B3FCD29 /* Sources */,
+				6B0445E629F274086B6D1911 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -234,6 +238,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6B0445E629F274086B6D1911 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				74A52CFFC0507E1B493AE01A /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C148F3B86CF0ED5241937CD4 /* Sources */ = {
