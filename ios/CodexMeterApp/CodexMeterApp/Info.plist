@@ -25,6 +25,12 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>CodexMeter uses Bluetooth to send usage data to your ESP32 display.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>CodexMeter discovers and connects to the local CodexMeter daemon on your Mac to show live usage.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
