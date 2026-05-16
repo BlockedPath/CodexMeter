@@ -1,6 +1,7 @@
 import re
+
 # We are currently IN the ios/CodexMeterApp directory so we don't need the prefix.
-with open('CodexMeterAppWidget/UsageWidget.swift', 'r') as f:
+with open("CodexMeterAppWidget/UsageWidget.swift", "r") as f:
     content = f.read()
 
 replacement = """struct AccessoryRectangularView: View {
@@ -33,7 +34,12 @@ replacement = """struct AccessoryRectangularView: View {
     }
 }"""
 
-content = re.sub(r"struct AccessoryRectangularView: View \{.*?(?=\nstruct UsageWidgetEntryView)", replacement + "\n", content, flags=re.DOTALL)
+content = re.sub(
+    r"struct AccessoryRectangularView: View \{.*?(?=\nstruct UsageWidgetEntryView)",
+    replacement + "\n",
+    content,
+    flags=re.DOTALL,
+)
 
-with open('CodexMeterAppWidget/UsageWidget.swift', 'w') as f:
+with open("CodexMeterAppWidget/UsageWidget.swift", "w") as f:
     f.write(content)

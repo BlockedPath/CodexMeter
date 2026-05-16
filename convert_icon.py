@@ -17,7 +17,7 @@ for i, h in enumerate(hex_vals):
     x = i % 32
     y = i // 32
     if val == trans_color:
-      img.putpixel((x, y), (0, 0, 0, 0))
+        img.putpixel((x, y), (0, 0, 0, 0))
     else:
         # RGB565 to RGB888
         r = (val >> 11) & 0x1F
@@ -29,9 +29,13 @@ for i, h in enumerate(hex_vals):
         img.putpixel((x, y), (r, g, b, 255))
 
 os.makedirs("ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset", exist_ok=True)
-img.resize((128, 128), Image.Resampling.NEAREST).save("ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset/CodexIcon.png")
+img.resize((128, 128), Image.Resampling.NEAREST).save(
+    "ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset/CodexIcon.png"
+)
 
-with open("ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset/Contents.json", "w") as f:
+with open(
+    "ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset/Contents.json", "w"
+) as f:
     f.write("""{
   "images" : [
     {

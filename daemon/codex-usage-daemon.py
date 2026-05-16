@@ -31,12 +31,13 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
 try:
     from zeroconf import ServiceInfo, Zeroconf  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional
     ServiceInfo = None
     Zeroconf = None
-    
+
 # Global zeroconf instance and service info so we can unregister on exit
 _ZEROCONF: Any | None = None
 _SERVICE_INFO: Any | None = None
@@ -1051,7 +1052,9 @@ def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
         try:
             local_ip = detect_local_ip()
             if not local_ip:
-                log("mDNS discovery disabled: could not determine a LAN IP address to advertise")
+                log(
+                    "mDNS discovery disabled: could not determine a LAN IP address to advertise"
+                )
                 return t
             info = ServiceInfo(
                 "_http._tcp.local.",
@@ -1066,13 +1069,17 @@ def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
                 _ZEROCONF = Zeroconf()
                 _SERVICE_INFO = info
                 _ZEROCONF.register_service(info)
-                log(f"mDNS advertisement active: codexmeter._http._tcp.local at http://{local_ip}:{port}")
+                log(
+                    f"mDNS advertisement active: codexmeter._http._tcp.local at http://{local_ip}:{port}"
+                )
             except Exception as exc:
                 log(f"mDNS advertise failed during register: {exc}")
         except Exception as exc:
             log(f"mDNS advertise failed: {exc}")
     else:
-        log("mDNS discovery disabled: install zeroconf to advertise the daemon on the local network")
+        log(
+            "mDNS discovery disabled: install zeroconf to advertise the daemon on the local network"
+        )
     return t
 
 
