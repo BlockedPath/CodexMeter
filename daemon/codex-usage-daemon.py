@@ -26,11 +26,42 @@ import urllib.parse
 import urllib.request
 import ssl
 import socket
+import atexit
 try:
     from zeroconf import ServiceInfo, Zeroconf  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional
     ServiceInfo = None
     Zeroconf = None
+    
+# Global zeroconf instance and service info so we can unregister on exit
+_ZEROCONF: object | None = None
+_SERVICE_INFO: object | None = None
+
+
+def _cleanup_zeroconf() -> None:
+    global _ZEROCONF, _SERVICE_INFO
+    try:
+        if _ZEROCONF is not None and _SERVICE_INFO is not None:
+            try:
+                _ZEROCONF.unregister_service(_SERVICE_INFO)
+            except Exception:
+                pass
+            try:
+                _ZEROCONF.close()
+            except Exception:
+                pass
+            log("Unregistered mDNS service and closed Zeroconf")
+    except Exception as exc:
+        # log may not be defined this early if imported differently; guard
+        try:
+            log(f"zeroconf cleanup error: {exc}")
+        except Exception:
+            pass
+    _ZEROCONF = None
+    _SERVICE_INFO = None
+
+
+atexit.register(_cleanup_zeroconf)
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1004,9 +1035,15 @@ def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
                 port=port,
                 properties={"path": "/usage"},
             )
-            zc = Zeroconf()
-            zc.register_service(info)
-            log(f"Advertised mDNS service codexmeter at {local_ip}:{port}")
+            # store global Zeroconf so we can unregister on exit
+            try:
+                global _ZEROCONF, _SERVICE_INFO
+                _ZEROCONF = Zeroconf()
+                _SERVICE_INFO = info
+                _ZEROCONF.register_service(info)
+                log(f"Advertised mDNS service codexmeter at {local_ip}:{port}")
+            except Exception as exc:
+                log(f"mDNS advertise failed during register: {exc}")
         except Exception as exc:
             log(f"mDNS advertise failed: {exc}")
     return t
