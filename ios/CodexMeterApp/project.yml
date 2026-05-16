@@ -26,6 +26,10 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: CodexMeterApp/Info.plist
+    scheme:
+      testTargets:
+        - CodexMeterAppTests
+      gatherCoverageData: true
     entitlements:
       path: CodexMeterApp/CodexMeterApp.entitlements
       properties:
