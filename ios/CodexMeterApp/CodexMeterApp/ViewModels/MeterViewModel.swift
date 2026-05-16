@@ -37,7 +37,7 @@ final class MeterViewModel: ObservableObject {
         ble.onRefreshRequested = { [weak self] in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
-        NotificationCenter.default.addObserver(forName: .didDiscoverDaemon, object: nil, queue: .main) { [weak self] note in
+        NotificationCenter.default.addObserver(forName: Notification.Name("didDiscoverDaemon"), object: nil, queue: .main) { [weak self] note in
             guard let self, let info = note.userInfo, let url = info["url"] as? String else { return }
             // Add to discovered list (dedupe)
             if !self.discoveredServers.contains(url) {
