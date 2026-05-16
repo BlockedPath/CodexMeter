@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0E45F6D99C87E4A19507BE61 /* MeterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0040FEB18C46FF8FA88AF2 /* MeterViewModel.swift */; };
 		11088ACD1FC0D3C80983FAA4 /* BLEManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8180B6886C50FA4DEA8992D /* BLEManager.swift */; };
+		5A1B2C3D4E5F6A7B8C9D0E01 /* MDNSBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A2B3C4D5E6F7A8B9C0D1E2F /* MDNSBrowser.swift */; };
 		A5237C0A03A2D901589A44EB /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE995ECA438F57D71DA72F0F /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
@@ -16,6 +17,7 @@
 		7EE906304FAD5C66673F7722 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C8180B6886C50FA4DEA8992D /* BLEManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEManager.swift; sourceTree = "<group>"; };
 		EC0040FEB18C46FF8FA88AF2 /* MeterViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterViewModel.swift; sourceTree = "<group>"; };
+		7A2B3C4D5E6F7A8B9C0D1E2F /* MDNSBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MDNSBrowser.swift; sourceTree = "<group>"; };
 		F014AD1C9A1D49FC558FACB3 /* CodexMeterApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodexMeterApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE995ECA438F57D71DA72F0F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -49,6 +51,7 @@
 			isa = PBXGroup;
 			children = (
 				C8180B6886C50FA4DEA8992D /* BLEManager.swift */,
+				7A2B3C4D5E6F7A8B9C0D1E2F /* MDNSBrowser.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -118,6 +121,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				11088ACD1FC0D3C80983FAA4 /* BLEManager.swift in Sources */,
+				5A1B2C3D4E5F6A7B8C9D0E01 /* MDNSBrowser.swift in Sources */,
 				A5237C0A03A2D901589A44EB /* ContentView.swift in Sources */,
 				0E45F6D99C87E4A19507BE61 /* MeterViewModel.swift in Sources */,
 			);
