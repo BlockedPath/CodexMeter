@@ -40,7 +40,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        central = CBCentralManager(delegate: self, queue: nil)
+        // Init CBCentralManager on a background queue to avoid blocking the main thread.
+        // Delegate callbacks target the main queue for UI updates.
+        central = CBCentralManager(delegate: self, queue: .main)
     }
 
     func startScanning() {

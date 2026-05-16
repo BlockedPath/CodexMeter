@@ -193,6 +193,24 @@ struct AtomWidgetStyleView: View {
     }
 }
 
+// MARK: - Pet State
+
+private let petNames = ["sukuna", "boba", "gojo", "itachi", "goblin", "apupepe", "elephant", "frirencodex", "nezha"]
+
+private func selectedPet() -> String {
+    UserDefaults(suiteName: "group.com.codexmeter")?.string(forKey: "selected_pet") ?? "sukuna"
+}
+
+private func petImageName(entry: UsageEntry) -> String {
+    let pet = selectedPet()
+    let state: String
+    if !entry.isOk { state = "review" }
+    else if entry.sessionPct <= 20 { state = "running" }
+    else if entry.sessionPct <= 50 { state = "waving" }
+    else { state = "idle" }
+    return "pet_\(pet)_\(state)"
+}
+
 // MARK: - Medium Widget
 
 struct MediumWidgetView: View {
@@ -206,35 +224,37 @@ struct MediumWidgetView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
             
-            // Right: Detailed status
-            VStack(alignment: .leading, spacing: 6) {
-                Text(entry.status.isEmpty ? "Waiting for sync" : entry.status)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                
+            // Right: Pet + status
+            VStack(spacing: 6) {
+                Image(petImageName(entry: entry))
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(width: 52, height: 80)
+
+                Text(entry.status.isEmpty ? " " : entry.status)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(atomDim)
+                    .lineLimit(1)
+
                 if entry.isOk {
-                    Text("Session Reset: \(formatResetTime(mins: entry.sessionResetMins))")
-                        .font(.caption)
-                        .foregroundStyle(atomDim)
-                    Text("Weekly Reset: \(formatResetTime(mins: entry.weeklyResetMins))")
-                        .font(.caption)
-                        .foregroundStyle(atomDim)
+                    Text("\(formatResetTime(mins: entry.sessionResetMins))")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(atomText)
                 }
-                
-                Spacer(minLength: 0)
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                    Text(entry.lastUpdated.map { relativeTime($0) } ?? "Never synced")
+
+                if entry.lastUpdated != nil {
+                    HStack(spacing: 3) {
+                        Image(systemName: "clock")
+                        Text(relativeTime(entry.lastUpdated!))
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.35))
                 }
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.45))
             }
-            .padding(.vertical, 8)
-            Spacer()
+            .frame(maxWidth: .infinity)
         }
-        .padding(16)
+        .padding(12)
         .containerBackground(for: .widget) { Color(white: 0.1) }
     }
 }

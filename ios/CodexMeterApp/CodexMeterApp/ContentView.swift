@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 // MARK: - App Entry Point
 
@@ -202,6 +203,12 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var urlText: String = ""
     @State private var saved = false
+    @AppStorage("selected_pet", store: UserDefaults(suiteName: "group.com.codexmeter"))
+    private var selectedPet: String = "sukuna"
+    @State private var showPetPicker = false
+    @State private var pendingPet: String = ""
+
+    private let pets = ["sukuna", "boba", "gojo", "itachi", "goblin", "apupepe", "elephant", "frirencodex", "nezha"]
 
     var body: some View {
         NavigationStack {
@@ -215,6 +222,46 @@ struct SettingsView: View {
                     Text("Mac Daemon Address")
                 } footer: {
                     Text("Enter your Mac's Tailscale IP and port.\nExample: http://100.87.45.12:9595")
+                }
+
+                Section("Display Pet") {
+                    Button {
+                        pendingPet = selectedPet
+                        showPetPicker = true
+                    } label: {
+                        HStack {
+                            if let uiImage = petUIImage("pet_\(selectedPet)_idle") {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .scaledToFit()
+                                    .frame(width: 32, height: 48)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(petDisplayName(selectedPet))
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                Text("Tap to change")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .sheet(isPresented: $showPetPicker) {
+                    PetCarouselView(
+                        pets: pets,
+                        selected: $pendingPet,
+                        onApply: {
+                            selectedPet = pendingPet
+                            WidgetCenter.shared.reloadAllTimelines()
+                            showPetPicker = false
+                        },
+                        onCancel: { showPetPicker = false }
+                    )
                 }
 
                 if !vm.discoveredServices.isEmpty {
@@ -270,6 +317,154 @@ struct SettingsView: View {
             }
             .onAppear {
                 urlText = vm.serverURL
+            }
+        }
+    }
+}
+
+// MARK: - Pet Carousel
+
+private func petDisplayName(_ id: String) -> String {
+    switch id {
+    case "sukuna": return "Sukuna"
+    case "boba": return "Boba"
+    case "gojo": return "Gojo"
+    case "itachi": return "Itachi"
+    case "goblin": return "Goblin"
+    case "apupepe": return "Pepe"
+    case "elephant": return "Elephant"
+    case "frirencodex": return "Friren"
+    case "nezha": return "Nezha"
+    default: return id.capitalized
+    }
+}
+
+/// Loads an image from the embedded widget extension bundle, since the
+/// main app target has no asset catalog of its own.
+private func petUIImage(_ name: String) -> UIImage? {
+    guard let widgetURL = Bundle.main.builtInPlugInsURL?
+        .appendingPathComponent("CodexMeterAppWidget.appex"),
+          let widgetBundle = Bundle(url: widgetURL)
+    else { return nil }
+    return UIImage(named: name, in: widgetBundle, compatibleWith: nil)
+}
+
+struct PetCarouselView: View {
+    let pets: [String]
+    @Binding var selected: String
+    let onApply: () -> Void
+    let onCancel: () -> Void
+
+    @State private var index: Int = 0
+
+    private func spriteImage(_ name: String) -> AnyView {
+        if let uiImage = petUIImage(name) {
+            return AnyView(
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .interpolation(.none)
+            )
+        } else {
+            return AnyView(
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .overlay(Image(systemName: "questionmark"))
+            )
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Pet display area
+                VStack(spacing: 20) {
+                    // Left/Right arrows + sprite
+                    HStack(spacing: 0) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                index = (index - 1 + pets.count) % pets.count
+                                selected = pets[index]
+                            }
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundColor(index > 0 ? .accentColor : .gray.opacity(0.3))
+                                .frame(width: 44, height: 44)
+                        }
+                        .disabled(index == 0)
+
+                        Spacer()
+
+                        spriteImage("pet_\(selected)_idle")
+                            .scaledToFit()
+                            .frame(width: 104, height: 160)
+                            .id(selected)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+
+                        Spacer()
+
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                index = (index + 1) % pets.count
+                                selected = pets[index]
+                            }
+                        } label: {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundColor(index < pets.count - 1 ? .accentColor : .gray.opacity(0.3))
+                                .frame(width: 44, height: 44)
+                        }
+                        .disabled(index == pets.count - 1)
+                    }
+                    .padding(.horizontal, 16)
+
+                    Text(petDisplayName(selected))
+                        .font(.title2.weight(.semibold))
+
+                    HStack(spacing: 8) {
+                        ForEach(0..<pets.count, id: \.self) { i in
+                            Circle()
+                                .fill(i == index ? Color.accentColor : Color.gray.opacity(0.3))
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                }
+                .frame(maxHeight: .infinity)
+
+                VStack(spacing: 12) {
+                    Button(action: onApply) {
+                        Text("Apply")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button(action: onCancel) {
+                        Text("OK")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
+            .navigationTitle("Choose Pet")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { onCancel() }
+                }
+            }
+            .onAppear {
+                if let i = pets.firstIndex(of: selected) {
+                    index = i
+                }
             }
         }
     }

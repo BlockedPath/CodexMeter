@@ -67,8 +67,11 @@ final class MeterViewModel: ObservableObject {
         if !self.discoveredServices.contains(svc) {
             self.discoveredServices.append(svc)
         }
-        if self.serverURL.isEmpty {
+        let wasEmpty = self.serverURL.isEmpty
+        if wasEmpty {
             self.serverURL = url
+            // Auto-start: this was an mDNS discovery, kick off fetch + timers
+            beginPolling()
         }
     }
 
@@ -78,6 +81,14 @@ final class MeterViewModel: ObservableObject {
             MDNSServiceBrowser.shared.startBrowsing()
         }
         guard !serverURL.isEmpty else { return }
+        beginPolling()
+    }
+
+    /// Start fetch + BLE timers. Called from start() or after mDNS discovery.
+    private func beginPolling() {
+        // Avoid double-starting
+        guard fetchTimer == nil else { return }
+
         Task { await fetchUsage() }
 
         fetchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
