@@ -42,7 +42,7 @@ final class MeterViewModel: ObservableObject {
         // Subscribe to MDNSBrowser discoveries
         mdnsCancellable = MDNSBrowser.shared.discoveryPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] url, _ in
+            .sink { [weak self] (url: String, _name: String) in
                 guard let self else { return }
                 if !self.discoveredServers.contains(url) {
                     self.discoveredServers.append(url)
