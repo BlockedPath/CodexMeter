@@ -274,7 +274,11 @@ struct AccessoryRectangularView: View {
     let entry: UsageEntry
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
+            Image("CodexIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text("CODEX")
                     .font(.system(size: 9, weight: .semibold, design: .rounded))
