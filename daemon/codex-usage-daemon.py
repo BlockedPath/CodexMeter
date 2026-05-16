@@ -19,7 +19,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
 import urllib.error
@@ -81,10 +80,17 @@ LOCAL_DAILY_SESSION_BUDGET = int(os.getenv("CODEXMETER_LOCAL_DAILY_SESSIONS", "1
 LOCAL_WEEKLY_SESSION_BUDGET = int(os.getenv("CODEXMETER_LOCAL_WEEKLY_SESSIONS", "60"))
 
 ADDRESS_FILE = CACHE_DIR / "ble-address"
-BLE_TRUST_FIRST = os.getenv("CODEXMETER_BLE_TRUST_FIRST", "").lower() in {"1", "true", "yes", "on"}
+BLE_TRUST_FIRST = os.getenv("CODEXMETER_BLE_TRUST_FIRST", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 OPENAI_COSTS_URL = "https://api.openai.com/v1/organization/costs"
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
-CODEX_AUTH_FILE = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex"))) / "auth.json"
+CODEX_AUTH_FILE = (
+    Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex"))) / "auth.json"
+)
 CODEX_HOME = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex")))
 CODEX_SESSIONS_DIR = CODEX_HOME / "sessions"
 CODEX_SESSION_INDEX = CODEX_HOME / "session_index.jsonl"
@@ -214,7 +220,9 @@ def openai_costs(start: datetime, end: datetime, bucket_width: str) -> float:
 def openai_usage_snapshot() -> UsageSnapshot:
     now = utc_now()
     local_now = datetime.now().astimezone()
-    day_start_local = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=local_now.tzinfo)
+    day_start_local = datetime.combine(
+        local_now.date(), datetime.min.time(), tzinfo=local_now.tzinfo
+    )
     week_start_local = day_start_local - timedelta(days=local_now.weekday())
 
     day_cost = openai_costs(day_start_local.astimezone(timezone.utc), now, "1d")
@@ -294,7 +302,9 @@ def codex_oauth_usage_snapshot() -> UsageSnapshot:
 
     rate_limit = data.get("rate_limit") if isinstance(data, dict) else {}
     primary = rate_limit.get("primary_window") if isinstance(rate_limit, dict) else None
-    secondary = rate_limit.get("secondary_window") if isinstance(rate_limit, dict) else None
+    secondary = (
+        rate_limit.get("secondary_window") if isinstance(rate_limit, dict) else None
+    )
     credits = data.get("credits") if isinstance(data, dict) else {}
     balance = credits.get("balance") if isinstance(credits, dict) else None
     try:
@@ -303,7 +313,9 @@ def codex_oauth_usage_snapshot() -> UsageSnapshot:
         credits_remaining = float(balance)
         status = f"{credits_remaining:.0f} credits"
     except (TypeError, ValueError):
-        plan = str(data.get("plan_type") or "codex") if isinstance(data, dict) else "codex"
+        plan = (
+            str(data.get("plan_type") or "codex") if isinstance(data, dict) else "codex"
+        )
         status = plan
 
     return UsageSnapshot(
@@ -373,7 +385,9 @@ def tail_text(path: Path, limit: int = 524288) -> str:
 
 
 def session_id_from_path(path: Path) -> str:
-    match = re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", path.stem)
+    match = re.search(
+        r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", path.stem
+    )
     return match.group(1) if match else ""
 
 
@@ -454,7 +468,9 @@ def function_call_activity(name: str, arguments: str) -> str:
     return "Using tool"
 
 
-def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> CodexActivity:
+def codex_activity(
+    path: Path | None = None, max_age_seconds: int = 180
+) -> CodexActivity:
     path = path or latest_session_file()
     if path is None:
         return CodexActivity()
@@ -495,9 +511,13 @@ def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> Code
             item_type = payload.get("type")
             if item_type == "function_call":
                 if not activity.action:
-                    activity.action = "Ready" if is_stale else function_call_activity(
-                        str(payload.get("name") or ""),
-                        str(payload.get("arguments") or ""),
+                    activity.action = (
+                        "Ready"
+                        if is_stale
+                        else function_call_activity(
+                            str(payload.get("name") or ""),
+                            str(payload.get("arguments") or ""),
+                        )
                     )
             if item_type == "function_call_output":
                 if not activity.action:
@@ -523,7 +543,9 @@ def codex_activity(path: Path | None = None, max_age_seconds: int = 180) -> Code
                 phase = str(payload.get("phase") or "")
                 if phase in {"final", "final_answer"}:
                     if not activity.completed:
-                        activity.completed = compact_text(str(payload.get("message") or ""), 42)
+                        activity.completed = compact_text(
+                            str(payload.get("message") or ""), 42
+                        )
                     if not activity.action:
                         activity.action = "Ready"
                 elif not activity.action:
@@ -553,8 +575,9 @@ def with_codex_activity(snapshot: UsageSnapshot) -> UsageSnapshot:
 
 def local_codex_activity_snapshot() -> UsageSnapshot:
     index = Path.home() / ".codex" / "session_index.jsonl"
-    now = utc_now()
-    day_start = datetime.combine(datetime.now().astimezone().date(), datetime.min.time()).astimezone()
+    day_start = datetime.combine(
+        datetime.now().astimezone().date(), datetime.min.time()
+    ).astimezone()
     week_start = day_start - timedelta(days=datetime.now().astimezone().weekday())
     day_count = 0
     week_count = 0
@@ -631,7 +654,10 @@ def device_matches_name(device) -> bool:
 
 
 def device_or_advertisement_matches_name(device, advertisement_data=None) -> bool:
-    return device_matches_name(device) or getattr(advertisement_data, "local_name", None) == DEVICE_NAME
+    return (
+        device_matches_name(device)
+        or getattr(advertisement_data, "local_name", None) == DEVICE_NAME
+    )
 
 
 def service_collection_has(service_collection, uuid: str) -> bool:
@@ -669,8 +695,14 @@ async def verify_ble_device(address: str) -> bool:
                 get_services = getattr(client, "get_services", None)
                 if callable(get_services):
                     service_result = get_services()
-                    services = await service_result if inspect.isawaitable(service_result) else service_result
-            return service_collection_has(services, SERVICE_UUID) and characteristic_collection_has(
+                    services = (
+                        await service_result
+                        if inspect.isawaitable(service_result)
+                        else service_result
+                    )
+            return service_collection_has(
+                services, SERVICE_UUID
+            ) and characteristic_collection_has(
                 services,
                 RX_CHAR_UUID,
             )
@@ -709,14 +741,18 @@ async def find_device():
     if not matches:
         raise RuntimeError(f"Could not find BLE device named {DEVICE_NAME!r}")
     if len(matches) > 1 and not BLE_TRUST_FIRST:
-        addresses = ", ".join(str(getattr(device, "address", "unknown")) for device in matches)
+        addresses = ", ".join(
+            str(getattr(device, "address", "unknown")) for device in matches
+        )
         raise RuntimeError(
             f"Found multiple BLE devices named {DEVICE_NAME!r}: {addresses}. "
             "Clear nearby duplicates or set CODEXMETER_BLE_TRUST_FIRST=1 to pick the first match."
         )
     device = matches[0]
     if not await verify_ble_device(device.address):
-        raise RuntimeError(f"BLE device {device.address} did not expose the CodexMeter service")
+        raise RuntimeError(
+            f"BLE device {device.address} did not expose the CodexMeter service"
+        )
     save_address(device.address)
     log(f"Found {device.name or DEVICE_NAME} at {device.address}")
     return device.address
@@ -749,7 +785,9 @@ async def run_once(address: str, shared: SharedSnapshot) -> None:
             payload = with_codex_activity(snapshot).payload()
             if payload != last_payload:
                 log(f"Sending: {payload}")
-                await client.write_gatt_char(RX_CHAR_UUID, payload.encode("utf-8"), response=False)
+                await client.write_gatt_char(
+                    RX_CHAR_UUID, payload.encode("utf-8"), response=False
+                )
                 last_payload = payload
                 shared.set_payload(payload)
             await asyncio.sleep(ACTIVITY_POLL_INTERVAL)
@@ -762,7 +800,9 @@ async def send_ble_once(address: str) -> None:
     payload = snapshot.payload()
     async with BleakClient(address) as client:
         log(f"Connected, sending once: {payload}")
-        await client.write_gatt_char(RX_CHAR_UUID, payload.encode("utf-8"), response=False)
+        await client.write_gatt_char(
+            RX_CHAR_UUID, payload.encode("utf-8"), response=False
+        )
 
 
 def find_serial_port(explicit: str | None = None) -> str:
@@ -854,6 +894,7 @@ async def run_serial_loop(port: str, once: bool, shared: SharedSnapshot) -> int:
 
 # ── Shared snapshot holder for HTTP endpoint ────────────────────────────────
 
+
 class SharedSnapshot:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -891,9 +932,11 @@ class SharedSnapshot:
                 "last_error_at": self._last_error_at,
                 "last_error": self._last_error,
                 "payload_updated_at": self._payload_updated_at,
-                "payload_age_seconds": round(time.time() - self._payload_timestamp())
-                if self._payload_updated_at
-                else None,
+                "payload_age_seconds": (
+                    round(time.time() - self._payload_timestamp())
+                    if self._payload_updated_at
+                    else None
+                ),
                 "uptime_seconds": round(time.time() - self._started_at),
             }
         return json.dumps(status, separators=(",", ":"))
@@ -913,7 +956,11 @@ class CodexMeterHTTPHandler(http.server.BaseHTTPRequestHandler):
         if path in {"/usage", "/status"}:
             payload = "{}"
             if self.shared:
-                payload = self.shared.get_payload() if path == "/usage" else self.shared.get_status()
+                payload = (
+                    self.shared.get_payload()
+                    if path == "/usage"
+                    else self.shared.get_status()
+                )
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -984,16 +1031,26 @@ async def transport_ble_task(shared: SharedSnapshot) -> None:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(description="Send OpenAI/Codex usage to CodexMeter.")
-    parser.add_argument("--once", action="store_true", help="send one payload then exit")
-    parser.add_argument("--print", action="store_true", help="print the current payload and exit")
+    parser = argparse.ArgumentParser(
+        description="Send OpenAI/Codex usage to CodexMeter."
+    )
+    parser.add_argument(
+        "--once", action="store_true", help="send one payload then exit"
+    )
+    parser.add_argument(
+        "--print", action="store_true", help="print the current payload and exit"
+    )
     parser.add_argument(
         "--transport",
         choices=("ble", "serial", "none"),
         default=os.getenv("CODEXMETER_TRANSPORT", "serial"),
         help="host link to use (default: serial, 'none' for HTTP-only)",
     )
-    parser.add_argument("--serial-port", default=os.getenv("CODEXMETER_SERIAL_PORT"), help="serial port for USB mode")
+    parser.add_argument(
+        "--serial-port",
+        default=os.getenv("CODEXMETER_SERIAL_PORT"),
+        help="serial port for USB mode",
+    )
     parser.add_argument(
         "--http-port",
         type=int,
@@ -1011,7 +1068,9 @@ async def main() -> int:
 
     # Start transport in background (non-fatal — HTTP stays up regardless)
     if args.transport == "serial":
-        asyncio.create_task(transport_serial_task(find_serial_port(args.serial_port), shared))
+        asyncio.create_task(
+            transport_serial_task(find_serial_port(args.serial_port), shared)
+        )
     elif args.transport == "ble":
         asyncio.create_task(transport_ble_task(shared))
 
