@@ -16,6 +16,13 @@ final class MeterViewModel: ObservableObject {
     @Published var daemonUptime: Int?
     @Published var discoveredServers: [String] = []
 
+    struct DiscoveredService: Identifiable, Equatable {
+        let id: String // use url as id
+        let name: String
+        let url: String
+    }
+    @Published var discoveredServices: [DiscoveredService] = []
+
     // Parsed fields for display
     @Published var sessionPct: Double = 0
     @Published var sessionResetMins: Int = -1
@@ -42,10 +49,15 @@ final class MeterViewModel: ObservableObject {
         // Subscribe to MDNSServiceBrowser discoveries
         mdnsCancellable = MDNSServiceBrowser.shared.discoveryPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] (url: String, _name: String) in
+            .sink { [weak self] (url: String, name: String) in
                 guard let self else { return }
+                // Update flat legacy list too for backward-compat
                 if !self.discoveredServers.contains(url) {
                     self.discoveredServers.append(url)
+                }
+                let svc = DiscoveredService(id: url, name: name, url: url)
+                if !self.discoveredServices.contains(svc) {
+                    self.discoveredServices.append(svc)
                 }
                 if self.serverURL.isEmpty {
                     self.serverURL = url

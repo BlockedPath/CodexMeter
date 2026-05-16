@@ -217,18 +217,30 @@ struct SettingsView: View {
                     Text("Enter your Mac's Tailscale IP and port.\nExample: http://100.87.45.12:9595")
                 }
 
-                if !vm.discoveredServers.isEmpty {
-                    Section(header: Text("Discovered on Local Network")) {
-                        ForEach(vm.discoveredServers, id: \ .self) { url in
+                if !vm.discoveredServices.isEmpty {
+                    Section(header: HStack {
+                        Text("Discovered on Local Network")
+                        Spacer()
+                        Button("Refresh") {
+                            // restart discovery
+                            vm.discoveredServices.removeAll()
+                            vm.discoveredServers.removeAll()
+                            MDNSServiceBrowser.shared.startBrowsing()
+                        }
+                    }) {
+                        ForEach(vm.discoveredServices) { svc in
                             Button(action: {
                                 vm.stop()
-                                vm.serverURL = url
+                                vm.serverURL = svc.url
                                 vm.start()
                                 dismiss()
                             }) {
                                 HStack {
                                     Image(systemName: "dot.radiowaves.left.and.right")
-                                    Text(url).lineLimit(1).truncationMode(.middle)
+                                    VStack(alignment: .leading) {
+                                        Text(svc.name).font(.subheadline).lineLimit(1)
+                                        Text(svc.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                                    }
                                     Spacer()
                                 }
                             }
