@@ -42,16 +42,18 @@ extension MDNSBrowser: NetServiceBrowserDelegate {
 extension MDNSBrowser: NetServiceDelegate {
     func netServiceDidResolveAddress(_ sender: NetService) {
         defer { sender.stop() }
-        guard let hostName = sender.hostName, !hostName.isEmpty else {
-            // Try to extract from addresses
-            if let addr = MDNSBrowser.firstIPv4Address(from: sender.addresses) {
-                let url = "http://\(addr):\(sender.port)"
-                NotificationCenter.default.post(name: .didDiscoverDaemon, object: nil, userInfo: ["url": url])
-            }
+        let name = sender.name
+        if let hostName = sender.hostName, !hostName.isEmpty {
+            let url = "http://\(hostName):\(sender.port)"
+            NotificationCenter.default.post(name: .didDiscoverDaemon, object: nil, userInfo: ["url": url, "name": name])
             return
         }
-        let url = "http://\(hostName):\(sender.port)"
-        NotificationCenter.default.post(name: .didDiscoverDaemon, object: nil, userInfo: ["url": url])
+        // Try to extract from addresses
+        if let addr = MDNSBrowser.firstIPv4Address(from: sender.addresses) {
+            let url = "http://\(addr):\(sender.port)"
+            NotificationCenter.default.post(name: .didDiscoverDaemon, object: nil, userInfo: ["url": url, "name": name])
+            return
+        }
     }
 
     func netService(_ sender: NetService, didNotResolve errorDict: [String : NSNumber]) {

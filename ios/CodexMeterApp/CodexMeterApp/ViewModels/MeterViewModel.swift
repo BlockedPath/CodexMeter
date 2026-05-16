@@ -13,6 +13,7 @@ final class MeterViewModel: ObservableObject {
     @Published var daemonLastError: String = ""
     @Published var daemonPayloadAge: Int?
     @Published var daemonUptime: Int?
+    @Published var discoveredServers: [String] = []
 
     // Parsed fields for display
     @Published var sessionPct: Double = 0
@@ -38,6 +39,10 @@ final class MeterViewModel: ObservableObject {
         }
         NotificationCenter.default.addObserver(forName: .didDiscoverDaemon, object: nil, queue: .main) { [weak self] note in
             guard let self, let info = note.userInfo, let url = info["url"] as? String else { return }
+            // Add to discovered list (dedupe)
+            if !self.discoveredServers.contains(url) {
+                self.discoveredServers.append(url)
+            }
             // If the user hasn't configured a server, auto-fill with discovered URL
             if self.serverURL.isEmpty {
                 self.serverURL = url

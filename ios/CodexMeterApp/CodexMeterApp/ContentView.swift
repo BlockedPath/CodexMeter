@@ -217,6 +217,25 @@ struct SettingsView: View {
                     Text("Enter your Mac's Tailscale IP and port.\nExample: http://100.87.45.12:9595")
                 }
 
+                if !vm.discoveredServers.isEmpty {
+                    Section(header: Text("Discovered on Local Network")) {
+                        ForEach(vm.discoveredServers, id: \ .self) { url in
+                            Button(action: {
+                                vm.stop()
+                                vm.serverURL = url
+                                vm.start()
+                                dismiss()
+                            }) {
+                                HStack {
+                                    Image(systemName: "dot.radiowaves.left.and.right")
+                                    Text(url).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Button("Save & Connect") {
                         vm.stop()
