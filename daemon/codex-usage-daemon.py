@@ -27,6 +27,7 @@ import urllib.request
 import ssl
 import socket
 import atexit
+from typing import Any
 try:
     from zeroconf import ServiceInfo, Zeroconf  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional
@@ -34,8 +35,8 @@ except ImportError:  # pragma: no cover - optional
     Zeroconf = None
     
 # Global zeroconf instance and service info so we can unregister on exit
-_ZEROCONF: object | None = None
-_SERVICE_INFO: object | None = None
+_ZEROCONF: Any | None = None
+_SERVICE_INFO: Any | None = None
 
 
 def _cleanup_zeroconf() -> None:
