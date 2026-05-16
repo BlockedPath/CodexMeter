@@ -1,5 +1,5 @@
 import Foundation
-import Combine
+@preconcurrency import Combine
 import Darwin
 
 /// MDNSBrowser discovers HTTP services on the local network and publishes resolved URLs.

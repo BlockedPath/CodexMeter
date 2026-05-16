@@ -1,0 +1,47 @@
+name: iOS CI
+
+on:
+  push:
+    branches:
+      - main
+      - tidy/deps-format
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios/CodexMeterApp
+        run: xcodegen generate
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Run app tests
+        working-directory: ios/CodexMeterApp
+        run: |
+          xcodebuild \
+            -project CodexMeterApp.xcodeproj \
+            -scheme CodexMeterApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            test
+
+      - name: Build widget extension
+        working-directory: ios/CodexMeterApp
+        run: |
+          xcodebuild \
+            -project CodexMeterApp.xcodeproj \
+            -target CodexMeterAppWidget \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build

@@ -10,16 +10,16 @@ struct UsageEntry: TimelineEntry {
 
 struct UsageProvider: TimelineProvider {
     func placeholder(in context: Context) -> UsageEntry {
-        UsageEntry(date: Date(), sessionPct: 50, status: "--", lastUpdated: Date())
+        UsageEntry(date: Date(), sessionPct: 42, status: "120 credits", lastUpdated: Date())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (UsageEntry) -> ()) {
-        let entry = loadEntry() ?? UsageEntry(date: Date(), sessionPct: 0, status: "No data", lastUpdated: nil)
+        let entry = loadEntry() ?? UsageEntry(date: Date(), sessionPct: 0, status: "Open the app to fetch usage", lastUpdated: nil)
         completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UsageEntry>) -> ()) {
-        let entry = loadEntry() ?? UsageEntry(date: Date(), sessionPct: 0, status: "No data", lastUpdated: nil)
+        let entry = loadEntry() ?? UsageEntry(date: Date(), sessionPct: 0, status: "Open the app to fetch usage", lastUpdated: nil)
         // Request the system refresh in 15 minutes; WidgetKit may adjust this.
         let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(60*15)
         let timeline = Timeline(entries: [entry], policy: .after(next))
@@ -44,32 +44,80 @@ struct UsageProvider: TimelineProvider {
 }
 
 struct UsageWidgetEntryView : View {
+    @Environment(\.widgetFamily) private var family
     var entry: UsageProvider.Entry
 
     var body: some View {
         ZStack {
-            Color(.systemBackground)
-            VStack(alignment: .leading) {
+            LinearGradient(
+                colors: [Color(red: 0.10, green: 0.12, blue: 0.20), Color(red: 0.14, green: 0.20, blue: 0.32)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Today")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Label("CodexMeter", systemImage: "chart.line.uptrend.xyaxis")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
                     Spacer()
-                    Text("\(entry.sessionPct)%")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                    Text("Today")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.white.opacity(0.10), in: Capsule())
                 }
-                Text(entry.status)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Spacer()
-                if let updated = entry.lastUpdated {
-                    Text("Updated \(relative(updated))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .stroke(.white.opacity(0.14), lineWidth: 10)
+                        Circle()
+                            .trim(from: 0, to: max(0.02, min(1.0, CGFloat(entry.sessionPct) / 100.0)))
+                            .stroke(
+                                AngularGradient(
+                                    colors: [.mint, .cyan, .blue],
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
+                            )
+                            .rotationEffect(.degrees(-90))
+                        VStack(spacing: 2) {
+                            Text("\(entry.sessionPct)%")
+                                .font(.title2.weight(.bold))
+                                .monospacedDigit()
+                            Text("left")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                    }
+                    .frame(width: family == .systemSmall ? 72 : 84, height: family == .systemSmall ? 72 : 84)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(entry.status.isEmpty ? "Waiting for daemon" : entry.status)
+                            .font(family == .systemSmall ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+
+                        if let updated = entry.lastUpdated {
+                            Text("Updated \(relative(updated))")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.72))
+                        } else {
+                            Text("No cached data yet")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
+                Spacer(minLength: 0)
             }
-            .padding(8)
+            .padding(14)
+        }
+        .containerBackground(for: .widget) {
+            Color.clear
         }
     }
 
@@ -93,4 +141,3 @@ struct UsageWidget: Widget {
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
-*** End Patch

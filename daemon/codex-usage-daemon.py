@@ -27,6 +27,9 @@ import urllib.request
 import ssl
 import socket
 import atexit
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 try:
     from zeroconf import ServiceInfo, Zeroconf  # type: ignore[import-not-found]
@@ -63,9 +66,6 @@ def _cleanup_zeroconf() -> None:
 
 
 atexit.register(_cleanup_zeroconf)
-from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 try:
     from bleak import BleakClient, BleakScanner  # type: ignore[import-not-found]
@@ -189,6 +189,29 @@ class CodexActivity:
 
 def log(message: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def detect_local_ip() -> str | None:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            candidate = s.getsockname()[0]
+        finally:
+            s.close()
+        if candidate and not candidate.startswith("127."):
+            return candidate
+    except Exception:
+        pass
+
+    try:
+        candidate = socket.gethostbyname(socket.gethostname())
+        if candidate and not candidate.startswith("127."):
+            return candidate
+    except Exception:
+        pass
+
+    return None
 
 
 def utc_now() -> datetime:
@@ -1015,20 +1038,21 @@ class CodexMeterHTTPHandler(http.server.BaseHTTPRequestHandler):
 
 def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
     CodexMeterHTTPHandler.shared = shared
-    server = http.server.HTTPServer(("0.0.0.0", port), CodexMeterHTTPHandler)
+    try:
+        server = http.server.HTTPServer(("0.0.0.0", port), CodexMeterHTTPHandler)
+    except OSError as exc:
+        raise RuntimeError(f"HTTP server failed to bind 0.0.0.0:{port}: {exc}") from exc
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
-    log(f"HTTP server listening on 0.0.0.0:{port}")
+    log(f"HTTP server listening on http://0.0.0.0:{port} (endpoints: /usage, /status)")
+
     # Advertise via mDNS if zeroconf is available
     if Zeroconf is not None and ServiceInfo is not None:
         try:
-            # determine local IP address by opening a UDP socket
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                s.connect(("8.8.8.8", 80))
-                local_ip = s.getsockname()[0]
-            finally:
-                s.close()
+            local_ip = detect_local_ip()
+            if not local_ip:
+                log("mDNS discovery disabled: could not determine a LAN IP address to advertise")
+                return t
             info = ServiceInfo(
                 "_http._tcp.local.",
                 "codexmeter._http._tcp.local.",
@@ -1042,11 +1066,13 @@ def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
                 _ZEROCONF = Zeroconf()
                 _SERVICE_INFO = info
                 _ZEROCONF.register_service(info)
-                log(f"Advertised mDNS service codexmeter at {local_ip}:{port}")
+                log(f"mDNS advertisement active: codexmeter._http._tcp.local at http://{local_ip}:{port}")
             except Exception as exc:
                 log(f"mDNS advertise failed during register: {exc}")
         except Exception as exc:
             log(f"mDNS advertise failed: {exc}")
+    else:
+        log("mDNS discovery disabled: install zeroconf to advertise the daemon on the local network")
     return t
 
 

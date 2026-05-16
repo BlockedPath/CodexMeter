@@ -18,13 +18,25 @@ targets:
     platform: iOS
     sources:
       - CodexMeterApp
+    dependencies:
+      - target: CodexMeterAppWidget
+        embed: true
+        codeSign: true
     settings:
       base:
         INFOPLIST_FILE: CodexMeterApp/Info.plist
+    entitlements:
+      path: CodexMeterApp/CodexMeterApp.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.codexmeter
     info:
       path: CodexMeterApp/Info.plist
       properties:
         NSBluetoothAlwaysUsageDescription: "CodexMeter uses Bluetooth to send usage data to your ESP32 display."
+        NSLocalNetworkUsageDescription: "CodexMeter discovers and connects to the local CodexMeter daemon on your Mac to show live usage."
+        NSBonjourServices:
+          - _http._tcp
         UIBackgroundModes:
           - bluetooth-central
         UIApplicationSceneManifest:
@@ -32,3 +44,39 @@ targets:
         UILaunchScreen: {}
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+
+  CodexMeterAppWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - CodexMeterAppWidget
+    settings:
+      base:
+        INFOPLIST_FILE: CodexMeterAppWidget/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.codexmeter.ios.widget
+    entitlements:
+      path: CodexMeterAppWidget/CodexMeterAppWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.codexmeter
+    info:
+      path: CodexMeterAppWidget/Info.plist
+      properties:
+        CFBundleDisplayName: CodexMeter
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  CodexMeterAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - CodexMeterAppTests
+    dependencies:
+      - target: CodexMeterApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codexmeter.ios.tests
+    scheme:
+      gatherCoverageData: true
+      testTargets:
+        - CodexMeterAppTests
