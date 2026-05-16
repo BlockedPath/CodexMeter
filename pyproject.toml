@@ -8,3 +8,6 @@ dependencies = [
     "pyserial",
     "certifi",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.15", "black>=24.0"]

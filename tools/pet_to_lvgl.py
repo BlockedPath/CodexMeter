@@ -11,14 +11,12 @@ from __future__ import annotations
 import argparse
 import binascii
 import json
-import os
 import re
 import struct
 import subprocess
 import tempfile
 import zlib
 from pathlib import Path
-
 
 ATLAS_COLUMNS = 8
 ATLAS_ROWS = 9
@@ -107,8 +105,8 @@ def read_png_rgba(data: bytes) -> tuple[int, int, bytearray]:
             raise SystemExit(f"PNG CRC mismatch in {ctype.decode('ascii', 'replace')}")
 
         if ctype == b"IHDR":
-            width, height, bit_depth, color_type, _compression, _filter, interlace = struct.unpack(
-                ">IIBBBBB", chunk
+            width, height, bit_depth, color_type, _compression, _filter, interlace = (
+                struct.unpack(">IIBBBBB", chunk)
             )
         elif ctype == b"IDAT":
             compressed.extend(chunk)
@@ -160,12 +158,16 @@ def read_png_rgba(data: bytes) -> tuple[int, int, bytearray]:
     return width, height, out
 
 
-def pixel_at(rgba: bytearray, image_w: int, x: int, y: int) -> tuple[int, int, int, int]:
+def pixel_at(
+    rgba: bytearray, image_w: int, x: int, y: int
+) -> tuple[int, int, int, int]:
     idx = (y * image_w + x) * 4
     return rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]
 
 
-def frame_bbox(rgba: bytearray, atlas_w: int, row: int, column: int) -> tuple[int, int, int, int] | None:
+def frame_bbox(
+    rgba: bytearray, atlas_w: int, row: int, column: int
+) -> tuple[int, int, int, int] | None:
     source_y = row * CELL_H
     source_x = column * CELL_W
     min_x = CELL_W
@@ -213,7 +215,9 @@ def atom_frame(
         sy = min(crop_h - 1, int(y / scale))
         for x in range(out_w):
             sx = min(crop_w - 1, int(x / scale))
-            r, g, b, a = pixel_at(rgba, atlas_w, source_x + src_x0 + sx, source_y + src_y0 + sy)
+            r, g, b, a = pixel_at(
+                rgba, atlas_w, source_x + src_x0 + sx, source_y + src_y0 + sy
+            )
             dst = (y_off + y) * target_w + x_off + x
             colors[dst] = rgb565(r, g, b)
             alphas[dst] = a
@@ -262,7 +266,9 @@ def write_atom_header(
         lines.append("    },")
     lines.append("};")
     lines.append("")
-    lines.append(f"static const uint8_t {symbol}_alpha[{macro}_FRAMES][{macro}_PIXELS] PROGMEM = {{")
+    lines.append(
+        f"static const uint8_t {symbol}_alpha[{macro}_FRAMES][{macro}_PIXELS] PROGMEM = {{"
+    )
     for _colors, alphas in frames:
         if len(alphas) != pixels:
             raise SystemExit(f"bad alpha frame size {len(alphas)}")
@@ -350,11 +356,13 @@ def write_atom_multi_header(
     ]
     for label in labels:
         lines.append(f'    "{label}",')
-    lines.extend([
-        "};",
-        "",
-        f"static const uint16_t {symbol}_rgb565[{macro}_FRAMES][{macro}_PIXELS] PROGMEM = {{",
-    ])
+    lines.extend(
+        [
+            "};",
+            "",
+            f"static const uint16_t {symbol}_rgb565[{macro}_FRAMES][{macro}_PIXELS] PROGMEM = {{",
+        ]
+    )
 
     for colors, _alphas in flat_frames:
         if len(colors) != pixels:
@@ -366,7 +374,9 @@ def write_atom_multi_header(
         lines.append("    },")
     lines.append("};")
     lines.append("")
-    lines.append(f"static const uint8_t {symbol}_alpha[{macro}_FRAMES][{macro}_PIXELS] PROGMEM = {{")
+    lines.append(
+        f"static const uint8_t {symbol}_alpha[{macro}_FRAMES][{macro}_PIXELS] PROGMEM = {{"
+    )
     for _colors, alphas in flat_frames:
         if len(alphas) != pixels:
             raise SystemExit(f"bad alpha frame size {len(alphas)}")
@@ -393,7 +403,9 @@ def main() -> None:
 
     pet_json = json.loads((args.pet_dir / "pet.json").read_text(encoding="utf-8"))
     source = args.pet_dir / pet_json.get("spritesheetPath", "spritesheet.webp")
-    display_name = pet_json.get("displayName") or pet_json.get("id") or args.pet_dir.name
+    display_name = (
+        pet_json.get("displayName") or pet_json.get("id") or args.pet_dir.name
+    )
     symbol = args.symbol or f"pet_{ident(display_name)}_{ident(args.state)}"
 
     png = convert_to_png(source)
@@ -403,13 +415,22 @@ def main() -> None:
 
     if args.state == "all":
         states = [
-            (state, atom_frames_for_state(rgba, width, state, args.target_w, args.target_h, args.pad))
+            (
+                state,
+                atom_frames_for_state(
+                    rgba, width, state, args.target_w, args.target_h, args.pad
+                ),
+            )
             for state in ROW_SPECS
         ]
-        write_atom_multi_header(args.out, symbol, display_name, states, args.target_w, args.target_h, source)
+        write_atom_multi_header(
+            args.out, symbol, display_name, states, args.target_w, args.target_h, source
+        )
         count = sum(len(frames) for _state, frames in states)
     else:
-        frames = atom_frames_for_state(rgba, width, args.state, args.target_w, args.target_h, args.pad)
+        frames = atom_frames_for_state(
+            rgba, width, args.state, args.target_w, args.target_h, args.pad
+        )
         write_atom_header(
             args.out,
             symbol,

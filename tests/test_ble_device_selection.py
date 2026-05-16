@@ -5,7 +5,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DAEMON_PATH = REPO_ROOT / "daemon" / "codex-usage-daemon.py"
 

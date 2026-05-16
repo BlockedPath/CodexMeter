@@ -1,3 +1,6 @@
 bleak>=0.22
 pyserial>=3.5
 certifi>=2024.2.2
+pytest>=7.0
+ruff>=0.15
+black>=24.0
