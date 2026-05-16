@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import WidgetKit
 
 /// App-wide state — completely OAuth-free. Just fetches from the Mac daemon.
@@ -35,7 +34,7 @@ final class MeterViewModel: ObservableObject {
     private let ble = BLEManager()
     private var fetchTimer: Timer?
     private var bleTimer: Timer?
-    private var mdnsCancellable: AnyCancellable?
+    private var mdnsTask: Task<Void, Never>?
 
     // URL of the Mac daemon (stored in UserDefaults)
     var serverURL: String {
@@ -47,23 +46,30 @@ final class MeterViewModel: ObservableObject {
         ble.onRefreshRequested = { [weak self] in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
-        // Subscribe to MDNSServiceBrowser discoveries
-        mdnsCancellable = MDNSServiceBrowser.shared.discoveryPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] (url: String, name: String) in
-                guard let self else { return }
-                // Update flat legacy list too for backward-compat
-                if !self.discoveredServers.contains(url) {
-                    self.discoveredServers.append(url)
-                }
-                let svc = DiscoveredService(id: url, name: name, url: url)
-                if !self.discoveredServices.contains(svc) {
-                    self.discoveredServices.append(svc)
-                }
-                if self.serverURL.isEmpty {
-                    self.serverURL = url
-                }
+        // Start an async task to consume async discoveries stream
+        mdnsTask = Task { [weak self] in
+            guard let self else { return }
+            for await pair in MDNSServiceBrowser.shared.discoveriesAsync() {
+                let (url, name) = pair
+                // process discovery on MainActor (self is @MainActor)
+                await self.processDiscovery(url: url, name: name)
             }
+        }
+    }
+
+    @MainActor
+    private func processDiscovery(url: String, name: String) {
+        // Update flat legacy list too for backward-compat
+        if !self.discoveredServers.contains(url) {
+            self.discoveredServers.append(url)
+        }
+        let svc = DiscoveredService(id: url, name: name, url: url)
+        if !self.discoveredServices.contains(svc) {
+            self.discoveredServices.append(svc)
+        }
+        if self.serverURL.isEmpty {
+            self.serverURL = url
+        }
     }
 
     func start() {
@@ -89,12 +95,12 @@ final class MeterViewModel: ObservableObject {
         bleTimer?.invalidate()
         ble.stop()
         MDNSServiceBrowser.shared.stopBrowsing()
-        mdnsCancellable?.cancel()
-        mdnsCancellable = nil
+        mdnsTask?.cancel()
+        mdnsTask = nil
     }
 
     deinit {
-        mdnsCancellable?.cancel()
+        mdnsTask?.cancel()
     }
 
     func fetchUsage() async {
