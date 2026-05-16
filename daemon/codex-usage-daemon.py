@@ -25,6 +25,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import ssl
+import socket
+try:
+    from zeroconf import ServiceInfo, Zeroconf  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional
+    ServiceInfo = None
+    Zeroconf = None
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -981,6 +987,28 @@ def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     log(f"HTTP server listening on 0.0.0.0:{port}")
+    # Advertise via mDNS if zeroconf is available
+    if Zeroconf is not None and ServiceInfo is not None:
+        try:
+            # determine local IP address by opening a UDP socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+            finally:
+                s.close()
+            info = ServiceInfo(
+                "_http._tcp.local.",
+                "codexmeter._http._tcp.local.",
+                addresses=[socket.inet_aton(local_ip)],
+                port=port,
+                properties={"path": "/usage"},
+            )
+            zc = Zeroconf()
+            zc.register_service(info)
+            log(f"Advertised mDNS service codexmeter at {local_ip}:{port}")
+        except Exception as exc:
+            log(f"mDNS advertise failed: {exc}")
     return t
 
 
