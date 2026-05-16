@@ -12,21 +12,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 import glob
 import http.server
 import inspect
 import json
 import os
 import re
+import socket
+import ssl
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import ssl
-import socket
-import atexit
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -139,6 +139,38 @@ SERIAL_PATTERNS = (
     "/dev/ttyACM*",
     "/dev/ttyUSB*",
 )
+
+# Canned payloads for --test-payload: let developers validate firmware UI
+# without a live Codex session.  Fields mirror UsageSnapshot.payload().
+CANNED_PAYLOADS: dict[str, dict] = {
+    # Healthy usage — plenty of budget remaining.
+    "happy": {
+        "s": 87,
+        "sr": 240,
+        "w": 72,
+        "wr": 7200,
+        "st": "$0.84 today",
+        "ok": True,
+    },
+    # Critically low — nearly exhausted on both axes.
+    "low": {
+        "s": 8,
+        "sr": 45,
+        "w": 5,
+        "wr": 1800,
+        "st": "$9.61 today",
+        "ok": True,
+    },
+    # Daemon running in local fallback mode (no API access).
+    "fallback": {
+        "s": 0,
+        "sr": -1,
+        "w": 0,
+        "wr": -1,
+        "st": "needs login",
+        "ok": False,
+    },
+}
 
 
 def urlopen_json(req: urllib.request.Request, timeout: int = 20) -> dict:
@@ -1151,12 +1183,39 @@ async def main() -> int:
         help="serial port for USB mode",
     )
     parser.add_argument(
+        "--test-payload",
+        choices=("happy", "low", "fallback"),
+        metavar="PRESET",
+        help="send a canned test payload and exit; PRESET is one of: happy, low, fallback",
+    )
+    parser.add_argument(
         "--http-port",
         type=int,
         default=int(os.getenv("CODEXMETER_HTTP_PORT", "9595")),
         help="serve usage over HTTP on this port (default: 9595)",
     )
     args = parser.parse_args()
+
+    if args.test_payload is not None:
+        preset = args.test_payload
+        payload = json.dumps(CANNED_PAYLOADS[preset], separators=(",", ":"))
+        print(f"Test payload ({preset}): {payload}")
+        if not args.print:
+            if args.transport == "serial":
+                port = find_serial_port(args.serial_port)
+                send_serial_payload(port, payload)
+            elif args.transport == "ble":
+                if BleakClient is None:
+                    raise RuntimeError(
+                        "Missing dependency: pip install -r requirements.txt"
+                    )
+                address = await find_device()
+                async with BleakClient(address) as client:
+                    log(f"Connected, sending test payload: {payload}")
+                    await client.write_gatt_char(
+                        RX_CHAR_UUID, payload.encode("utf-8"), response=False
+                    )
+        return 0
 
     if args.print:
         print(with_codex_activity(usage_snapshot()).payload())
