@@ -271,7 +271,6 @@ struct SettingsView: View {
                         Button("Refresh") {
                             // restart discovery
                             vm.discoveredServices.removeAll()
-                            vm.discoveredServers.removeAll()
                             MDNSServiceBrowser.shared.startBrowsing()
                         }
                     }) {

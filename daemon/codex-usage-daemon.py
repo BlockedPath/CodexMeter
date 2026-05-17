@@ -1088,10 +1088,15 @@ def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
                     "mDNS discovery disabled: could not determine a LAN IP address to advertise"
                 )
                 return t
+            try:
+                mdns_addr = socket.inet_aton(local_ip)
+            except OSError:
+                log(f"mDNS discovery disabled: non-IPv4 LAN IP detected ({local_ip})")
+                return t
             info = ServiceInfo(
                 "_http._tcp.local.",
                 "codexmeter._http._tcp.local.",
-                addresses=[socket.inet_aton(local_ip)],
+                addresses=[mdns_addr],
                 port=port,
                 properties={"path": "/usage"},
             )

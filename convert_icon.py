@@ -28,15 +28,16 @@ for i, h in enumerate(hex_vals):
         b = (b << 3) | (b >> 2)
         img.putpixel((x, y), (r, g, b, 255))
 
-os.makedirs("ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset", exist_ok=True)
-img.resize((128, 128), Image.Resampling.NEAREST).save(
-    "ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset/CodexIcon.png"
-)
+targets = [
+    "ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset",
+    "ios/CodexMeterApp/CodexMeterAppWidget/Assets.xcassets/CodexIcon.imageset",
+]
 
-with open(
-    "ios/CodexMeterApp/Assets.xcassets/CodexIcon.imageset/Contents.json", "w"
-) as f:
-    f.write("""{
+for target in targets:
+    os.makedirs(target, exist_ok=True)
+    img.resize((128, 128), Image.Resampling.NEAREST).save(f"{target}/CodexIcon.png")
+    with open(f"{target}/Contents.json", "w") as f:
+        f.write("""{
   "images" : [
     {
       "idiom" : "universal",

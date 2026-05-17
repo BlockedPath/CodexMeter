@@ -14,8 +14,6 @@ final class MeterViewModel: ObservableObject {
     @Published var daemonLastError: String = ""
     @Published var daemonPayloadAge: Int?
     @Published var daemonUptime: Int?
-    @Published var discoveredServers: [String] = []
-
     struct DiscoveredService: Identifiable, Equatable {
         let id: String // use url as id
         let name: String
@@ -59,10 +57,7 @@ final class MeterViewModel: ObservableObject {
 
     @MainActor
     private func processDiscovery(url: String, name: String) {
-        // Update flat legacy list too for backward-compat
-        if !self.discoveredServers.contains(url) {
-            self.discoveredServers.append(url)
-        }
+        guard name.lowercased().contains("codexmeter") else { return }
         let svc = DiscoveredService(id: url, name: name, url: url)
         if !self.discoveredServices.contains(svc) {
             self.discoveredServices.append(svc)
@@ -252,4 +247,3 @@ final class MeterViewModel: ObservableObject {
         return "\(daemonUptime / 3600)h"
     }
 }
-

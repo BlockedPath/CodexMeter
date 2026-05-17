@@ -15,6 +15,10 @@ final class MDNSServiceBrowser: NSObject {
     private var servicesResolving = Set<NetService>()
     private var isBrowsing = false
     private var discoveredURLs = Set<String>()
+    
+    private func isCodexMeterService(_ service: NetService) -> Bool {
+        service.name.lowercased().contains("codexmeter")
+    }
 
     private override init() {
         super.init()
@@ -103,7 +107,9 @@ extension MDNSServiceBrowser {
         await withCheckedContinuation { (cont: CheckedContinuation<(String, String)?, Never>) in
             var resumed = false
             var cancellable: AnyCancellable? = nil
-            cancellable = discoveryPublisher.sink { pair in
+            cancellable = discoveryPublisher
+                .receive(on: DispatchQueue.main)
+                .sink { pair in
                 if !resumed {
                     resumed = true
                     cancellable?.cancel()
@@ -115,6 +121,7 @@ extension MDNSServiceBrowser {
                 if !resumed {
                     resumed = true
                     cancellable?.cancel()
+                    self.stopBrowsing()
                     cont.resume(returning: nil)
                 }
             }
@@ -156,6 +163,7 @@ extension MDNSServiceBrowser: NetServiceDelegate {
     func netServiceDidResolveAddress(_ sender: NetService) {
         DispatchQueue.main.async {
             guard self.servicesResolving.contains(sender) else { self.cleanup(service: sender); return }
+            guard self.isCodexMeterService(sender) else { self.cleanup(service: sender); return }
             guard let urlString = self.urlString(from: sender) else { self.cleanup(service: sender); return }
             if !self.discoveredURLs.contains(urlString) {
                 self.discoveredURLs.insert(urlString)

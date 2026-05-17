@@ -132,7 +132,7 @@ struct AtomWidgetStyleView: View {
             }
             .padding(.bottom, 6)
 
-            if !entry.isOk && entry.status.starts(with: "Open app") {
+            if !entry.isOk {
                 Spacer()
                 Text("waiting for host")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -142,7 +142,7 @@ struct AtomWidgetStyleView: View {
             } else {
                 
                 // Session (Today)
-                Text(entry.isOk ? "5H LEFT" : "TODAY")
+                Text(entry.isOk ? "\(formatResetTime(mins: entry.sessionResetMins).uppercased()) LEFT" : "TODAY")
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .foregroundStyle(atomDim)
                 
@@ -269,7 +269,11 @@ private func relativeTime(_ date: Date) -> String {
 
 struct AccessoryCircularView: View {
     let entry: UsageEntry
-    private var fraction: Double { max(0.01, Double(entry.sessionPct) / 100.0) }
+    private var fraction: Double {
+        let value = Double(entry.sessionPct) / 100.0
+        guard entry.isOk else { return max(0, value) }
+        return max(0.01, value)
+    }
 
     var body: some View {
         ZStack {
