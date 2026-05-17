@@ -4,6 +4,8 @@ A tiny desk display for Codex usage on the M5Stack AtomS3 — plus an iOS app an
 
 CodexMeter shows your current Codex rate-limit windows, connection status, a rotating status pet, and your active Codex session on a 128×128 screen the size of a postage stamp. It sits next to your keyboard and updates live while you work. The iOS app discovers the daemon on your local network and mirrors the same data on your iPhone.
 
+> 📚 **Full documentation on the [wiki](https://github.com/BlockedPath/CodexMeter/wiki)** — setup guide, architecture, API reference, and troubleshooting.
+
 ![CodexMeter usage screen showing daily and weekly remaining usage](docs/images/codexmeter-usage.jpeg)
 
 ![CodexMeter status screen on the AtomS3 display](docs/images/codexmeter-status.jpeg)
@@ -518,6 +520,7 @@ Specify it explicitly:
 
 ### Deep-dive references
 
+- **[Wiki](https://github.com/BlockedPath/CodexMeter/wiki)** — Setup guide, architecture diagrams, API reference, full troubleshooting
 - [systm.md](systm.md) — Full protocol reference, architecture, data flow, constraints
 - [docs/E2E_TESTING.md](docs/E2E_TESTING.md) — End-to-end testing guide for daemon + iOS + device
 - [TODO.md](TODO.md) — Planned improvements
