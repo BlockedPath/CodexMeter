@@ -14,6 +14,7 @@ you work.
 ---
 
 ## What You Need
+
 <img width="1800" height="1100" alt="image" src="https://github.com/user-attachments/assets/92adff6d-6ee6-410f-88df-acc001405879" />
 
 **Hardware:**
@@ -163,6 +164,60 @@ costs as a fallback). It sends a compact JSON payload to the AtomS3 over USB
 serial. The firmware renders it on the display. See [systm.md](systm.md) for
 the full protocol reference including payload fields, BLE UUIDs, and data
 sources.
+
+### iOS App — Local Network Discovery & HTTP Polling
+
+The included iOS app (CodexMeterApp) discovers a running CodexMeter daemon on
+the local network via Bonjour (`_http._tcp`) and polls its HTTP endpoints.
+The app uses `NetServiceBrowser` to find services and resolves an IPv4 address
+or hostname, then repeatedly fetches `/usage` (every 30s) and `/status` to
+populate the UI and to forward payloads to a nearby AtomS3 over BLE.
+
+If you want to replicate the polling behaviour from your own Swift code, here
+is a small example using Swift concurrency:
+
+```swift
+import Foundation
+
+struct Usage: Decodable {
+  let s: Int // session pct
+  let sr: Int // session reset mins
+  let w: Int // weekly pct
+  let wr: Int // weekly reset mins
+  let st: String // status text
+  let ok: Bool
+}
+
+func fetchUsage(from baseURL: URL) async throws -> Usage {
+  let url = baseURL.appendingPathComponent("usage")
+  var req = URLRequest(url: url)
+  req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+  let (data, resp) = try await URLSession.shared.data(for: req)
+  guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+    throw URLError(.badServerResponse)
+  }
+  return try JSONDecoder().decode(Usage.self, from: data)
+}
+
+// Example usage
+Task {
+  do {
+    let base = URL(string: "http://192.168.1.12:9595")!
+    let usage = try await fetchUsage(from: base)
+    print("Today pct: \(usage.s) status: \(usage.st)")
+  } catch {
+    print("fetch error: \(error)")
+  }
+}
+```
+
+Notes:
+
+- The iOS app's `Info.plist` already contains `NSLocalNetworkUsageDescription`
+  and `NSBonjourServices` entries so the system will prompt for Local Network
+  permissions when discovery runs.
+- The daemon advertises itself via mDNS when `zeroconf` is installed and the
+  HTTP server is running (see `daemon/codex-usage-daemon.py`).
 
 ---
 

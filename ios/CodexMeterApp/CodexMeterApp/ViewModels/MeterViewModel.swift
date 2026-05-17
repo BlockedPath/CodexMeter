@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 /// App-wide state — completely OAuth-free. Just fetches from the Mac daemon.
 @MainActor
@@ -13,6 +14,12 @@ final class MeterViewModel: ObservableObject {
     @Published var daemonLastError: String = ""
     @Published var daemonPayloadAge: Int?
     @Published var daemonUptime: Int?
+    struct DiscoveredService: Identifiable, Equatable {
+        let id: String // use url as id
+        let name: String
+        let url: String
+    }
+    @Published var discoveredServices: [DiscoveredService] = []
 
     // Parsed fields for display
     @Published var sessionPct: Double = 0
@@ -25,6 +32,7 @@ final class MeterViewModel: ObservableObject {
     private let ble = BLEManager()
     private var fetchTimer: Timer?
     private var bleTimer: Timer?
+    private var mdnsTask: Task<Void, Never>?
 
     // URL of the Mac daemon (stored in UserDefaults)
     var serverURL: String {
@@ -36,10 +44,46 @@ final class MeterViewModel: ObservableObject {
         ble.onRefreshRequested = { [weak self] in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
+        // Start an async task to consume async discoveries stream
+        mdnsTask = Task { [weak self] in
+            guard let self else { return }
+            for await pair in MDNSServiceBrowser.shared.discoveriesAsync() {
+                let (url, name) = pair
+                // process discovery on MainActor (self is @MainActor)
+                await self.processDiscovery(url: url, name: name)
+            }
+        }
+    }
+
+    @MainActor
+    private func processDiscovery(url: String, name: String) {
+        guard name.lowercased().contains("codexmeter") else { return }
+        let svc = DiscoveredService(id: url, name: name, url: url)
+        if !self.discoveredServices.contains(svc) {
+            self.discoveredServices.append(svc)
+        }
+        let wasEmpty = self.serverURL.isEmpty
+        if wasEmpty {
+            self.serverURL = url
+            // Auto-start: this was an mDNS discovery, kick off fetch + timers
+            beginPolling()
+        }
     }
 
     func start() {
+        // If no server configured, start mDNS discovery to auto-find the daemon.
+        if serverURL.isEmpty {
+            MDNSServiceBrowser.shared.startBrowsing()
+        }
         guard !serverURL.isEmpty else { return }
+        beginPolling()
+    }
+
+    /// Start fetch + BLE timers. Called from start() or after mDNS discovery.
+    private func beginPolling() {
+        // Avoid double-starting
+        guard fetchTimer == nil else { return }
+
         Task { await fetchUsage() }
 
         fetchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
@@ -56,6 +100,13 @@ final class MeterViewModel: ObservableObject {
         fetchTimer?.invalidate()
         bleTimer?.invalidate()
         ble.stop()
+        MDNSServiceBrowser.shared.stopBrowsing()
+        mdnsTask?.cancel()
+        mdnsTask = nil
+    }
+
+    deinit {
+        mdnsTask?.cancel()
     }
 
     func fetchUsage() async {
@@ -80,6 +131,16 @@ final class MeterViewModel: ObservableObject {
 
             let json = String(data: data, encoding: .utf8) ?? "{}"
             usageJSON = json
+            // Persist latest usage JSON and server URL to the shared App Group
+            if let shared = UserDefaults(suiteName: "group.com.codexmeter") {
+                shared.set(json, forKey: "last_usage_json")
+                shared.set(self.serverURL, forKey: "server_url")
+                shared.synchronize()
+            }
+            // Ask the system to reload widget timelines — non-blocking request
+            #if canImport(WidgetKit)
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
             lastUpdate = Date()
             errorMessage = nil
 

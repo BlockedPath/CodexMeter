@@ -12,22 +12,61 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 import glob
 import http.server
 import inspect
 import json
 import os
 import re
+import socket
+import ssl
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import ssl
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
+
+try:
+    from zeroconf import ServiceInfo, Zeroconf  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional
+    ServiceInfo = None
+    Zeroconf = None
+
+# Global zeroconf instance and service info so we can unregister on exit
+_ZEROCONF: Any | None = None
+_SERVICE_INFO: Any | None = None
+
+
+def _cleanup_zeroconf() -> None:
+    global _ZEROCONF, _SERVICE_INFO
+    try:
+        if _ZEROCONF is not None and _SERVICE_INFO is not None:
+            try:
+                _ZEROCONF.unregister_service(_SERVICE_INFO)
+            except Exception:
+                pass
+            try:
+                _ZEROCONF.close()
+            except Exception:
+                pass
+            log("Unregistered mDNS service and closed Zeroconf")
+    except Exception as exc:
+        # log may not be defined this early if imported differently; guard
+        try:
+            log(f"zeroconf cleanup error: {exc}")
+        except Exception:
+            pass
+    _ZEROCONF = None
+    _SERVICE_INFO = None
+
+
+atexit.register(_cleanup_zeroconf)
 
 try:
     from bleak import BleakClient, BleakScanner  # type: ignore[import-not-found]
@@ -101,6 +140,38 @@ SERIAL_PATTERNS = (
     "/dev/ttyUSB*",
 )
 
+# Canned payloads for --test-payload: let developers validate firmware UI
+# without a live Codex session.  Fields mirror UsageSnapshot.payload().
+CANNED_PAYLOADS: dict[str, dict] = {
+    # Healthy usage — plenty of budget remaining.
+    "happy": {
+        "s": 87,
+        "sr": 240,
+        "w": 72,
+        "wr": 7200,
+        "st": "$0.84 today",
+        "ok": True,
+    },
+    # Critically low — nearly exhausted on both axes.
+    "low": {
+        "s": 8,
+        "sr": 45,
+        "w": 5,
+        "wr": 1800,
+        "st": "$9.61 today",
+        "ok": True,
+    },
+    # Daemon running in local fallback mode (no API access).
+    "fallback": {
+        "s": 0,
+        "sr": -1,
+        "w": 0,
+        "wr": -1,
+        "st": "needs login",
+        "ok": False,
+    },
+}
+
 
 def urlopen_json(req: urllib.request.Request, timeout: int = 20) -> dict:
     context = ssl.create_default_context(cafile=certifi.where()) if certifi else None
@@ -151,6 +222,29 @@ class CodexActivity:
 
 def log(message: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def detect_local_ip() -> str | None:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            candidate = s.getsockname()[0]
+        finally:
+            s.close()
+        if candidate and not candidate.startswith("127."):
+            return candidate
+    except Exception:
+        pass
+
+    try:
+        candidate = socket.gethostbyname(socket.gethostname())
+        if candidate and not candidate.startswith("127."):
+            return candidate
+    except Exception:
+        pass
+
+    return None
 
 
 def utc_now() -> datetime:
@@ -977,10 +1071,52 @@ class CodexMeterHTTPHandler(http.server.BaseHTTPRequestHandler):
 
 def start_http_server(port: int, shared: SharedSnapshot) -> threading.Thread:
     CodexMeterHTTPHandler.shared = shared
-    server = http.server.HTTPServer(("0.0.0.0", port), CodexMeterHTTPHandler)
+    try:
+        server = http.server.HTTPServer(("0.0.0.0", port), CodexMeterHTTPHandler)
+    except OSError as exc:
+        raise RuntimeError(f"HTTP server failed to bind 0.0.0.0:{port}: {exc}") from exc
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
-    log(f"HTTP server listening on 0.0.0.0:{port}")
+    log(f"HTTP server listening on http://0.0.0.0:{port} (endpoints: /usage, /status)")
+
+    # Advertise via mDNS if zeroconf is available
+    if Zeroconf is not None and ServiceInfo is not None:
+        try:
+            local_ip = detect_local_ip()
+            if not local_ip:
+                log(
+                    "mDNS discovery disabled: could not determine a LAN IP address to advertise"
+                )
+                return t
+            try:
+                mdns_addr = socket.inet_aton(local_ip)
+            except OSError:
+                log(f"mDNS discovery disabled: non-IPv4 LAN IP detected ({local_ip})")
+                return t
+            info = ServiceInfo(
+                "_http._tcp.local.",
+                "codexmeter._http._tcp.local.",
+                addresses=[mdns_addr],
+                port=port,
+                properties={"path": "/usage"},
+            )
+            # store global Zeroconf so we can unregister on exit
+            try:
+                global _ZEROCONF, _SERVICE_INFO
+                _ZEROCONF = Zeroconf()
+                _SERVICE_INFO = info
+                _ZEROCONF.register_service(info)
+                log(
+                    f"mDNS advertisement active: codexmeter._http._tcp.local at http://{local_ip}:{port}"
+                )
+            except Exception as exc:
+                log(f"mDNS advertise failed during register: {exc}")
+        except Exception as exc:
+            log(f"mDNS advertise failed: {exc}")
+    else:
+        log(
+            "mDNS discovery disabled: install zeroconf to advertise the daemon on the local network"
+        )
     return t
 
 
@@ -1052,12 +1188,39 @@ async def main() -> int:
         help="serial port for USB mode",
     )
     parser.add_argument(
+        "--test-payload",
+        choices=("happy", "low", "fallback"),
+        metavar="PRESET",
+        help="send a canned test payload and exit; PRESET is one of: happy, low, fallback",
+    )
+    parser.add_argument(
         "--http-port",
         type=int,
         default=int(os.getenv("CODEXMETER_HTTP_PORT", "9595")),
         help="serve usage over HTTP on this port (default: 9595)",
     )
     args = parser.parse_args()
+
+    if args.test_payload is not None:
+        preset = args.test_payload
+        payload = json.dumps(CANNED_PAYLOADS[preset], separators=(",", ":"))
+        print(f"Test payload ({preset}): {payload}")
+        if not args.print:
+            if args.transport == "serial":
+                port = find_serial_port(args.serial_port)
+                send_serial_payload(port, payload)
+            elif args.transport == "ble":
+                if BleakClient is None:
+                    raise RuntimeError(
+                        "Missing dependency: pip install -r requirements.txt"
+                    )
+                address = await find_device()
+                async with BleakClient(address) as client:
+                    log(f"Connected, sending test payload: {payload}")
+                    await client.write_gatt_char(
+                        RX_CHAR_UUID, payload.encode("utf-8"), response=False
+                    )
+        return 0
 
     if args.print:
         print(with_codex_activity(usage_snapshot()).payload())

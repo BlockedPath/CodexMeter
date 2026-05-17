@@ -4,3 +4,4 @@ certifi>=2024.2.2
 pytest>=7.0
 ruff>=0.15
 black>=24.0
+zeroconf>=0.51

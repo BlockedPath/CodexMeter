@@ -40,7 +40,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        central = CBCentralManager(delegate: self, queue: nil)
+        // Init CBCentralManager on a background queue to avoid blocking the main thread.
+        // Delegate callbacks target the main queue for UI updates.
+        central = CBCentralManager(delegate: self, queue: .main)
     }
 
     func startScanning() {
@@ -107,7 +109,7 @@ final class BLEManager: NSObject, ObservableObject {
 
 // MARK: - CBCentralManagerDelegate
 
-@MainActor extension BLEManager: @MainActor CBCentralManagerDelegate {
+extension BLEManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
@@ -174,7 +176,7 @@ final class BLEManager: NSObject, ObservableObject {
 
 // MARK: - CBPeripheralDelegate
 
-@MainActor extension BLEManager: @MainActor CBPeripheralDelegate {
+extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let services = peripheral.services else { return }
         for service in services {
@@ -219,4 +221,3 @@ final class BLEManager: NSObject, ObservableObject {
         }
     }
 }
-
