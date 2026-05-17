@@ -8,9 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import math
 import re
-import struct
 import sys
 from pathlib import Path
 from PIL import Image
@@ -109,7 +107,7 @@ def parse_header(path: Path) -> dict:
 
     # Extract RGB565 frame data (PROGMEM 2D array)
     rgb565_match = re.search(
-        rf"static const uint16_t (\w+_rgb565)\[\w+\]\[",
+        r"static const uint16_t (\w+_rgb565)\[\w+\]\[",
         text,
     )
     if not rgb565_match:
@@ -118,7 +116,7 @@ def parse_header(path: Path) -> dict:
 
     # Extract alpha frame data
     alpha_match = re.search(
-        rf"static const uint8_t (\w+_alpha)\[\w+\]\[",
+        r"static const uint8_t (\w+_alpha)\[\w+\]\[",
         text,
     )
     if not alpha_match:
