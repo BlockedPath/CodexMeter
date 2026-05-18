@@ -1,17 +1,57 @@
 import SwiftUI
+import BackgroundTasks
 import WidgetKit
 
 // MARK: - App Entry Point
 
+private enum BackgroundRefreshConstants {
+    static let taskIdentifier = "com.codexmeter.ios.app-refresh"
+}
+
 @main
 struct CodexMeterAppEntry: App {
     @StateObject private var vm = MeterViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(vm)
         }
+        .backgroundTask(.appRefresh(BackgroundRefreshConstants.taskIdentifier)) {
+            await runBackgroundRefresh()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: BackgroundRefreshConstants.taskIdentifier)
+            case .inactive:
+                break
+            case .background:
+                scheduleBackgroundRefresh()
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func scheduleBackgroundRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshConstants.taskIdentifier)
+        request.earliestBeginDate = Date().addingTimeInterval(15 * 60)
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            #if DEBUG
+            print("Failed to schedule background refresh: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    private func runBackgroundRefresh() async {
+        scheduleBackgroundRefresh()
+        guard let serverURL = SharedUsageStore.sharedServerURL(), !serverURL.isEmpty else { return }
+        _ = try? await MeterViewModel.refreshSharedUsage(serverURL: serverURL)
     }
 }
 
@@ -38,7 +78,6 @@ struct ContentView: View {
                 }
         }
         .onAppear { vm.start() }
-        .onDisappear { vm.stop() }
     }
 }
 
