@@ -9,7 +9,6 @@ import CoreBluetooth
 ///     RX:     ...0002  (WRITE | WRITE_NR) — host writes compact JSON here
 ///     TX:     ...0003  (READ | NOTIFY)    — device sends ack/nack
 ///     REQ:    ...0004  (NOTIFY)           — device requests refresh
-@MainActor
 final class BLEManager: NSObject, ObservableObject {
     static let serviceUUID = CBUUID(string: "434f4445-584d-4554-4552-000000000001")
     static let rxCharUUID  = CBUUID(string: "434f4445-584d-4554-4552-000000000002")
@@ -40,8 +39,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        // Init CBCentralManager on a background queue to avoid blocking the main thread.
-        // Delegate callbacks target the main queue for UI updates.
+        // Delegate callbacks are delivered on the main queue so @Published state
+        // changes stay on the UI thread without making the whole delegate
+        // conformance MainActor-isolated, which Swift 6 rejects.
         central = CBCentralManager(delegate: self, queue: .main)
     }
 
