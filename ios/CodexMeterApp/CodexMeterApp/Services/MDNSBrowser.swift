@@ -84,6 +84,8 @@ final class MDNSServiceBrowser: NSObject {
     }
 }
 
+extension MDNSServiceBrowser: @unchecked Sendable {}
+
 // MARK: - Async/Await helpers
 
 extension MDNSServiceBrowser {
