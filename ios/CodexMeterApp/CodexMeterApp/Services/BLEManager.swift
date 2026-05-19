@@ -109,7 +109,7 @@ final class BLEManager: NSObject, ObservableObject {
 
 // MARK: - CBCentralManagerDelegate
 
-extension BLEManager: CBCentralManagerDelegate {
+extension BLEManager: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
@@ -176,7 +176,7 @@ extension BLEManager: CBCentralManagerDelegate {
 
 // MARK: - CBPeripheralDelegate
 
-extension BLEManager: CBPeripheralDelegate {
+extension BLEManager: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let services = peripheral.services else { return }
         for service in services {

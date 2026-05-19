@@ -103,7 +103,7 @@ final class MeterViewModel: ObservableObject {
             for await pair in MDNSServiceBrowser.shared.discoveriesAsync() {
                 let (url, name) = pair
                 // process discovery on MainActor (self is @MainActor)
-                await self.processDiscovery(url: url, name: name)
+                self.processDiscovery(url: url, name: name)
             }
         }
     }
@@ -119,7 +119,7 @@ final class MeterViewModel: ObservableObject {
         if wasEmpty {
             self.serverURL = url
             // Auto-start: this was an mDNS discovery, kick off fetch + timers
-            beginPolling()
+            beginUsagePolling()
         }
     }
 
@@ -130,12 +130,13 @@ final class MeterViewModel: ObservableObject {
         if serverURL.isEmpty {
             MDNSServiceBrowser.shared.startBrowsing()
         }
+        beginDisplayScanning()
         guard !serverURL.isEmpty else { return }
-        beginPolling()
+        beginUsagePolling()
     }
 
-    /// Start fetch + BLE timers. Called from start() or after mDNS discovery.
-    private func beginPolling() {
+    /// Start usage fetch + refresh timer. Called from start() or after mDNS discovery.
+    private func beginUsagePolling() {
         // Avoid double-starting
         guard fetchTimer == nil else { return }
 
@@ -144,6 +145,11 @@ final class MeterViewModel: ObservableObject {
         fetchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
+    }
+
+    /// BLE display scanning should not depend on HTTP daemon discovery.
+    private func beginDisplayScanning() {
+        guard bleTimer == nil else { return }
 
         ble.startScanning()
         bleTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
