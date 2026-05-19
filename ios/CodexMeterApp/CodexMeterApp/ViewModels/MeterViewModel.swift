@@ -1,6 +1,59 @@
 import Foundation
 import WidgetKit
 
+enum SharedUsageStore {
+    static let appGroupIdentifier = "group.com.codexmeter"
+    static let usageJSONKey = "last_usage_json"
+    static let serverURLKey = "server_url"
+    static let lastUsageUpdatedAtKey = "last_usage_updated_at"
+
+    static func sharedDefaults() -> UserDefaults? {
+        UserDefaults(suiteName: appGroupIdentifier)
+    }
+
+    static func normalizedBaseURL(from rawValue: String) -> String {
+        var base = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.hasSuffix("/usage") {
+            base = String(base.dropLast(6))
+        } else if base.hasSuffix("/status") {
+            base = String(base.dropLast(7))
+        }
+        if base.hasSuffix("/") {
+            base.removeLast()
+        }
+        return base
+    }
+
+    static func endpointURL(from serverURL: String, path: String) -> URL? {
+        let base = normalizedBaseURL(from: serverURL)
+        guard !base.isEmpty else { return nil }
+        return URL(string: "\(base)/\(path)")
+    }
+
+    static func persistUsageJSON(_ json: String, serverURL: String) {
+        guard let shared = sharedDefaults() else { return }
+        shared.set(json, forKey: usageJSONKey)
+        shared.set(normalizedBaseURL(from: serverURL), forKey: serverURLKey)
+        shared.set(Date().timeIntervalSince1970, forKey: lastUsageUpdatedAtKey)
+        shared.synchronize()
+    }
+
+    static func cachedUsageJSON() -> String? {
+        sharedDefaults()?.string(forKey: usageJSONKey)
+    }
+
+    static func sharedServerURL() -> String? {
+        sharedDefaults()?.string(forKey: serverURLKey)
+    }
+
+    static func lastUsageUpdatedAt() -> Date? {
+        guard let timestamp = sharedDefaults()?.object(forKey: lastUsageUpdatedAtKey) as? Double else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+}
+
 /// App-wide state — completely OAuth-free. Just fetches from the Mac daemon.
 @MainActor
 final class MeterViewModel: ObservableObject {
@@ -49,8 +102,7 @@ final class MeterViewModel: ObservableObject {
             guard let self else { return }
             for await pair in MDNSServiceBrowser.shared.discoveriesAsync() {
                 let (url, name) = pair
-                // process discovery on MainActor (self is @MainActor)
-                await self.processDiscovery(url: url, name: name)
+                self.processDiscovery(url: url, name: name)
             }
         }
     }
@@ -66,21 +118,24 @@ final class MeterViewModel: ObservableObject {
         if wasEmpty {
             self.serverURL = url
             // Auto-start: this was an mDNS discovery, kick off fetch + timers
-            beginPolling()
+            beginUsagePolling()
         }
     }
 
     func start() {
+        restoreCachedUsage()
+
         // If no server configured, start mDNS discovery to auto-find the daemon.
         if serverURL.isEmpty {
             MDNSServiceBrowser.shared.startBrowsing()
         }
+        beginDisplayScanning()
         guard !serverURL.isEmpty else { return }
-        beginPolling()
+        beginUsagePolling()
     }
 
-    /// Start fetch + BLE timers. Called from start() or after mDNS discovery.
-    private func beginPolling() {
+    /// Start usage fetch + refresh timer. Called from start() or after mDNS discovery.
+    private func beginUsagePolling() {
         // Avoid double-starting
         guard fetchTimer == nil else { return }
 
@@ -89,6 +144,11 @@ final class MeterViewModel: ObservableObject {
         fetchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.fetchUsage() }
         }
+    }
+
+    /// BLE display scanning should not depend on HTTP daemon discovery.
+    private func beginDisplayScanning() {
+        guard bleTimer == nil else { return }
 
         ble.startScanning()
         bleTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -111,32 +171,19 @@ final class MeterViewModel: ObservableObject {
 
     func fetchUsage() async {
         guard !serverURL.isEmpty else { return }
+        guard !isFetching else { return }
 
         isFetching = true
         defer { isFetching = false }
 
         do {
             guard let requestURL = endpointURL("usage") else {
-                errorMessage = "Invalid URL"
+                setFetchError("Invalid URL")
                 return
             }
-            var request = URLRequest(url: requestURL)
-            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                errorMessage = "Server returned \((response as? HTTPURLResponse)?.statusCode ?? 0)"
-                return
-            }
-
-            let json = String(data: data, encoding: .utf8) ?? "{}"
+            let json = try await Self.fetchUsageJSONString(from: requestURL)
             usageJSON = json
-            // Persist latest usage JSON and server URL to the shared App Group
-            if let shared = UserDefaults(suiteName: "group.com.codexmeter") {
-                shared.set(json, forKey: "last_usage_json")
-                shared.set(self.serverURL, forKey: "server_url")
-                shared.synchronize()
-            }
+            SharedUsageStore.persistUsageJSON(json, serverURL: self.serverURL)
             // Ask the system to reload widget timelines — non-blocking request
             #if canImport(WidgetKit)
             WidgetCenter.shared.reloadAllTimelines()
@@ -148,22 +195,67 @@ final class MeterViewModel: ObservableObject {
             await fetchDaemonStatus()
             sendToBLE()
         } catch {
-            errorMessage = error.localizedDescription
+            if !isCancellation(error) {
+                setFetchError(error.localizedDescription)
+            }
             await fetchDaemonStatus()
         }
     }
 
+    private func restoreCachedUsage() {
+        guard let json = SharedUsageStore.cachedUsageJSON(), usageJSON == "{}" else { return }
+        usageJSON = json
+        parseJSON(json)
+        lastUpdate = SharedUsageStore.lastUsageUpdatedAt()
+        if hasUsableUsage {
+            errorMessage = nil
+        }
+    }
+
+    private var hasUsableUsage: Bool {
+        lastUpdate != nil || isOK || usageJSON != "{}"
+    }
+
+    private func setFetchError(_ message: String) {
+        if hasUsableUsage {
+            errorMessage = nil
+        } else {
+            errorMessage = message
+        }
+    }
+
+    private func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        return (error as? URLError)?.code == .cancelled
+    }
+
+    nonisolated static func refreshSharedUsage(serverURL: String) async throws -> String {
+        guard let requestURL = SharedUsageStore.endpointURL(from: serverURL, path: "usage") else {
+            throw URLError(.badURL)
+        }
+
+        let json = try await fetchUsageJSONString(from: requestURL)
+        SharedUsageStore.persistUsageJSON(json, serverURL: serverURL)
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
+        return json
+    }
+
+    private nonisolated static func fetchUsageJSONString(from requestURL: URL) async throws -> String {
+        var request = URLRequest(url: requestURL)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
     private func endpointURL(_ path: String) -> URL? {
-        var base = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if base.hasSuffix("/usage") {
-            base = String(base.dropLast(6))
-        } else if base.hasSuffix("/status") {
-            base = String(base.dropLast(7))
-        }
-        if base.hasSuffix("/") {
-            base.removeLast()
-        }
-        return URL(string: "\(base)/\(path)")
+        SharedUsageStore.endpointURL(from: serverURL, path: path)
     }
 
     private func fetchDaemonStatus() async {

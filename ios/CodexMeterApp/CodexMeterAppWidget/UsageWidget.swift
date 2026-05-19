@@ -1,6 +1,52 @@
 import SwiftUI
 import WidgetKit
 
+private enum WidgetSharedUsageStore {
+    static let appGroupIdentifier = "group.com.codexmeter"
+    static let usageJSONKey = "last_usage_json"
+    static let serverURLKey = "server_url"
+    static let lastUsageUpdatedAtKey = "last_usage_updated_at"
+
+    static func sharedDefaults() -> UserDefaults? {
+        UserDefaults(suiteName: appGroupIdentifier)
+    }
+
+    static func normalizedBaseURL(from rawValue: String) -> String {
+        var base = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.hasSuffix("/usage") {
+            base = String(base.dropLast(6))
+        } else if base.hasSuffix("/status") {
+            base = String(base.dropLast(7))
+        }
+        if base.hasSuffix("/") {
+            base.removeLast()
+        }
+        return base
+    }
+
+    static func endpointURL(from serverURL: String, path: String) -> URL? {
+        let base = normalizedBaseURL(from: serverURL)
+        guard !base.isEmpty else { return nil }
+        return URL(string: "\(base)/\(path)")
+    }
+
+    static func persistUsageJSON(_ json: String, serverURL: String) {
+        guard let shared = sharedDefaults() else { return }
+        shared.set(json, forKey: usageJSONKey)
+        shared.set(normalizedBaseURL(from: serverURL), forKey: serverURLKey)
+        shared.set(Date().timeIntervalSince1970, forKey: lastUsageUpdatedAtKey)
+        shared.synchronize()
+    }
+
+    static func cachedUsageJSON() -> String? {
+        sharedDefaults()?.string(forKey: usageJSONKey)
+    }
+
+    static func sharedServerURL() -> String? {
+        sharedDefaults()?.string(forKey: serverURLKey)
+    }
+}
+
 // MARK: - Entry
 
 struct UsageEntry: TimelineEntry {
@@ -22,20 +68,56 @@ struct UsageProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (UsageEntry) -> Void) {
-        let entry = loadEntry() ?? placeholder(in: context)
-        completion(entry)
+        Task {
+            let entry = await loadEntry() ?? placeholder(in: context)
+            completion(entry)
+        }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UsageEntry>) -> Void) {
-        let entry = loadEntry() ?? UsageEntry(date: Date(), sessionPct: 0, weeklyPct: 0, sessionResetMins: -1, weeklyResetMins: -1, status: "Open app to sync", isOk: false, lastUpdated: nil)
-        let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-        completion(Timeline(entries: [entry], policy: .after(next)))
+        Task {
+            let entry = await loadEntry() ?? UsageEntry(date: Date(), sessionPct: 0, weeklyPct: 0, sessionResetMins: -1, weeklyResetMins: -1, status: "Open app to sync", isOk: false, lastUpdated: nil)
+            let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
+            completion(Timeline(entries: [entry], policy: .after(next)))
+        }
     }
 
-    private func loadEntry() -> UsageEntry? {
+    private func loadEntry() async -> UsageEntry? {
+        if let serverURL = WidgetSharedUsageStore.sharedServerURL(),
+           !serverURL.isEmpty,
+           let freshEntry = await fetchLiveEntry(serverURL: serverURL) {
+            return freshEntry
+        }
+
         guard
-            let shared = UserDefaults(suiteName: "group.com.codexmeter"),
-            let json = shared.string(forKey: "last_usage_json"),
+            let json = WidgetSharedUsageStore.cachedUsageJSON()
+        else { return nil }
+
+        return parseEntry(from: json, fallbackDate: Date())
+    }
+
+    private func fetchLiveEntry(serverURL: String) async -> UsageEntry? {
+        do {
+            guard let requestURL = WidgetSharedUsageStore.endpointURL(from: serverURL, path: "usage") else {
+                return nil
+            }
+            var request = URLRequest(url: requestURL)
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return nil
+            }
+            let json = String(data: data, encoding: .utf8) ?? "{}"
+            WidgetSharedUsageStore.persistUsageJSON(json, serverURL: serverURL)
+            return parseEntry(from: json, fallbackDate: Date())
+        } catch {
+            return nil
+        }
+    }
+
+    private func parseEntry(from json: String, fallbackDate: Date) -> UsageEntry? {
+        guard
+            let shared = WidgetSharedUsageStore.sharedDefaults(),
             let data = json.data(using: .utf8),
             let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -46,8 +128,10 @@ struct UsageProvider: TimelineProvider {
         let wr = (dict["wr"] as? Int) ?? (dict["wr"] as? Double).map { Int($0) } ?? -1
         let st = (dict["st"] as? String) ?? ""
         let ok = (dict["ok"] as? Bool) ?? false
+        let storedTimestamp = shared.object(forKey: WidgetSharedUsageStore.lastUsageUpdatedAtKey) as? Double
+        let lastUpdated = storedTimestamp.map(Date.init(timeIntervalSince1970:)) ?? fallbackDate
 
-        return UsageEntry(date: Date(), sessionPct: s, weeklyPct: w, sessionResetMins: sr, weeklyResetMins: wr, status: st, isOk: ok, lastUpdated: Date())
+        return UsageEntry(date: fallbackDate, sessionPct: s, weeklyPct: w, sessionResetMins: sr, weeklyResetMins: wr, status: st, isOk: ok, lastUpdated: lastUpdated)
     }
 }
 
