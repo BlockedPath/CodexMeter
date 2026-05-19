@@ -3,6 +3,7 @@ import Foundation
 import Darwin
 
 /// MDNSBrowser discovers HTTP services on the local network and publishes resolved URLs.
+@MainActor
 final class MDNSServiceBrowser: NSObject {
     static let shared = MDNSServiceBrowser()
 
@@ -26,22 +27,18 @@ final class MDNSServiceBrowser: NSObject {
     }
 
     func startBrowsing() {
-        DispatchQueue.main.async {
-            guard !self.isBrowsing else { return }
-            self.isBrowsing = true
-            self.discoveredURLs.removeAll()
-            self.netServiceBrowser.searchForServices(ofType: self.serviceType, inDomain: self.domain)
-        }
+        guard !isBrowsing else { return }
+        isBrowsing = true
+        discoveredURLs.removeAll()
+        netServiceBrowser.searchForServices(ofType: serviceType, inDomain: domain)
     }
 
     func stopBrowsing() {
-        DispatchQueue.main.async {
-            guard self.isBrowsing else { return }
-            self.isBrowsing = false
-            self.netServiceBrowser.stop()
-            self.servicesResolving.removeAll()
-            self.discoveredURLs.removeAll()
-        }
+        guard isBrowsing else { return }
+        isBrowsing = false
+        netServiceBrowser.stop()
+        servicesResolving.removeAll()
+        discoveredURLs.removeAll()
     }
 
     private func cleanup(service: NetService) {
@@ -130,51 +127,45 @@ extension MDNSServiceBrowser {
     }
 }
 
-extension MDNSServiceBrowser: NetServiceBrowserDelegate {
+extension MDNSServiceBrowser: @preconcurrency NetServiceBrowserDelegate {
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
-        DispatchQueue.main.async {
-            if !self.servicesResolving.contains(service) {
-                self.servicesResolving.insert(service)
-                service.delegate = self
-                service.resolve(withTimeout: 5.0)
-            }
+        if !servicesResolving.contains(service) {
+            servicesResolving.insert(service)
+            service.delegate = self
+            service.resolve(withTimeout: 5.0)
         }
     }
 
     func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
-        DispatchQueue.main.async {
-            self.servicesResolving.remove(service)
-            if let urlString = self.urlString(from: service) {
-                self.discoveredURLs.remove(urlString)
-            }
+        servicesResolving.remove(service)
+        if let urlString = urlString(from: service) {
+            discoveredURLs.remove(urlString)
         }
     }
 
     func netServiceBrowserDidStopSearch(_ browser: NetServiceBrowser) {
-        DispatchQueue.main.async { self.isBrowsing = false }
+        isBrowsing = false
     }
 
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String : NSNumber]) {
-        DispatchQueue.main.async { self.isBrowsing = false }
+        isBrowsing = false
     }
 }
 
-extension MDNSServiceBrowser: NetServiceDelegate {
+extension MDNSServiceBrowser: @preconcurrency NetServiceDelegate {
     func netServiceDidResolveAddress(_ sender: NetService) {
-        DispatchQueue.main.async {
-            guard self.servicesResolving.contains(sender) else { self.cleanup(service: sender); return }
-            guard self.isCodexMeterService(sender) else { self.cleanup(service: sender); return }
-            guard let urlString = self.urlString(from: sender) else { self.cleanup(service: sender); return }
-            if !self.discoveredURLs.contains(urlString) {
-                self.discoveredURLs.insert(urlString)
-                self.discoveryPublisher.send((urlString, sender.name))
-            }
-            self.cleanup(service: sender)
+        guard servicesResolving.contains(sender) else { cleanup(service: sender); return }
+        guard isCodexMeterService(sender) else { cleanup(service: sender); return }
+        guard let urlString = urlString(from: sender) else { cleanup(service: sender); return }
+        if !discoveredURLs.contains(urlString) {
+            discoveredURLs.insert(urlString)
+            discoveryPublisher.send((urlString, sender.name))
         }
+        cleanup(service: sender)
     }
 
     func netService(_ sender: NetService, didNotResolve errorDict: [String : NSNumber]) {
-        DispatchQueue.main.async { self.cleanup(service: sender) }
+        cleanup(service: sender)
     }
 
     func netService(_ sender: NetService, didUpdateTXTRecord data: Data) {
