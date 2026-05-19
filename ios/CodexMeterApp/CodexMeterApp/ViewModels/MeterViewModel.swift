@@ -50,7 +50,7 @@ final class MeterViewModel: ObservableObject {
             for await pair in MDNSServiceBrowser.shared.discoveriesAsync() {
                 let (url, name) = pair
                 // process discovery on MainActor (self is @MainActor)
-                await self.processDiscovery(url: url, name: name)
+                self.processDiscovery(url: url, name: name)
             }
         }
     }
